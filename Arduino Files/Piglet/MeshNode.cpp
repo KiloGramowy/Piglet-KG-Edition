@@ -13,8 +13,9 @@ static const uint8_t  JCMK_MAGIC[4] = {'E','N','O','W'};
 static const uint8_t  JCMK_BCAST[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 static const uint32_t JCMK_REQ_INIT_MS = 300;
 static const uint32_t JCMK_REQ_MAX_MS  = 5000;
-static const uint32_t JCMK_HB_MS       = 5000;
-static const uint32_t JCMK_SCAN_MS     = 4500;
+static const uint32_t JCMK_HB_MS          = 5000;
+static const uint32_t NODE_SCAN_DWELL_MS  = 80;    // ms per channel (JCMK CHANNEL_TIMER)
+static const uint32_t NODE_ADMIN_WIN_MS   = 300;   // ch-6 window after each full cycle
 #define JCMK_TEXT_MAX 200
 
 enum JcmkMsgType : uint8_t {
@@ -80,7 +81,12 @@ static uint32_t jcmkHbCounter   = 0;
 static uint32_t jcmkLastHbMs    = 0;
 static uint32_t jcmkLastReqMs   = 0;
 static uint32_t jcmkReqInterval = JCMK_REQ_INIT_MS;
-static uint32_t jcmkLastScanMs  = 0;
+
+// Per-channel async scan state
+static bool     nodeScanActive   = false;
+static uint8_t  nodeScanChOffset = 0;
+static bool     nodeScanAdminWin = false;
+static uint32_t nodeScanAdminMs  = 0;
 
 // Pending core-found event — written in ESP-Now callback, consumed in loop
 static volatile bool  jcmkCoreFoundPending = false;
@@ -367,48 +373,72 @@ static void coreParseAndLogText(const char* line) {
 }
 
 // ================================================================
-//  Scan and forward assigned channels to Core
+//  Per-channel async scan (JCMK startNextNodeAssignedScan pattern).
+//  Scans one assigned channel per call at NODE_SCAN_DWELL_MS dwell,
+//  cycles through the full assigned range, then enters a ch-6 admin
+//  window (heartbeat + NODE_ADMIN_WIN_MS) before the next cycle.
 // ================================================================
-static void nodeDoScan() {
-  int n = WiFi.scanNetworks(false, true);
+static void nodeDoScanTick() {
+  uint8_t numCh = (jcmkEndIdx >= jcmkStartIdx)
+                ? (jcmkEndIdx - jcmkStartIdx + 1) : 0;
+  if (numCh == 0) return;
+
+  // Admin window: radio is on ch 6, heartbeat already sent, just waiting
+  if (nodeScanAdminWin) {
+    if (millis() - nodeScanAdminMs >= NODE_ADMIN_WIN_MS) {
+      nodeScanAdminWin = false;
+      nodeScanChOffset = 0;  // begin next cycle
+    }
+    return;
+  }
+
+  if (!nodeScanActive) {
+    // Full cycle complete — enter admin window
+    if (nodeScanChOffset >= numCh) {
+      jcmkSetChannel(JCMK_ESPNOW_CH);
+      while (GPSSerial.available()) gps.encode(GPSSerial.read());
+      if (jcmkHaveCore) { jcmkSendHeartbeat(); jcmkLastHbMs = millis(); }
+      nodeScanAdminWin = true;
+      nodeScanAdminMs  = millis();
+      return;
+    }
+
+    uint8_t chIdx = jcmkStartIdx + nodeScanChOffset;
+    if (chIdx >= JCMK_NUM_CHANNELS) { nodeScanChOffset++; return; }
+    uint8_t channel = JCMK_CHANNELS[chIdx];
+
+    // Async scan of this single channel only (no blocking)
+    int16_t rc = WiFi.scanNetworks(/*async*/true, /*hidden*/true,
+                                    /*passive*/false, NODE_SCAN_DWELL_MS, channel);
+    if (rc == WIFI_SCAN_RUNNING || rc == 0) {
+      nodeScanActive = true;
+    } else {
+      nodeScanChOffset++;  // skip failed channel
+    }
+    return;
+  }
+
+  // Scan in progress — poll for completion
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) return;
+
   if (n > 0) {
     jcmkNetworksFound += (uint32_t)n;
     for (int i = 0; i < n; i++) {
-      uint8_t ch = (uint8_t)WiFi.channel(i);
-      bool inRange = false;
-      for (uint8_t j = jcmkStartIdx; j <= jcmkEndIdx && j < JCMK_NUM_CHANNELS; j++) {
-        if (JCMK_CHANNELS[j] == ch) { inRange = true; break; }
-      }
-      if (!inRange) continue;
-
       String bssid = WiFi.BSSIDstr(i);
       String ssid  = WiFi.SSID(i);
       String auth  = meshAuthModeToString(WiFi.encryptionType(i));
+      int    ch    = WiFi.channel(i);
       int    rssi  = WiFi.RSSI(i);
-
-      // JCMK node WiFi record format: BSSID,SSID,SECURITY,CHANNEL,RSSI,W
-      String line = bssid + "," + ssid + "," + auth + ","
-                  + String((int)ch) + "," + String(rssi) + ",W";
+      String line  = bssid + "," + ssid + "," + auth + ","
+                   + String(ch) + "," + String(rssi) + ",W";
       jcmkSendText(line);
       jcmkSentCount++;
     }
-    WiFi.scanDelete();
-  } else {
-    WiFi.scanDelete();
   }
-  // Return radio to JCMK home channel so ESP-Now can transmit
-  jcmkSetChannel(JCMK_ESPNOW_CH);
-
-  // Drain GPS serial buffer that built up during the blocking scan
-  while (GPSSerial.available()) gps.encode(GPSSerial.read());
-
-  // Send a guaranteed heartbeat after each scan cycle (JCMK pattern).
-  // The blocking scan can delay the 5 s timer heartbeat; sending one here
-  // ensures the Core always gets a heartbeat within one scan cycle.
-  if (jcmkHaveCore) {
-    jcmkSendHeartbeat();
-    jcmkLastHbMs = millis();  // reset timer so 5 s window starts fresh
-  }
+  WiFi.scanDelete();
+  nodeScanActive = false;
+  nodeScanChOffset++;
 }
 
 // ================================================================
@@ -425,10 +455,12 @@ void enterNodeMode() {
   jcmkLastHbMs          = 0;
   jcmkLastReqMs         = 0;
   jcmkReqInterval       = JCMK_REQ_INIT_MS;
-  jcmkLastScanMs        = 0;
   jcmkStartIdx          = 0;
   jcmkEndIdx            = JCMK_NUM_CHANNELS - 1;
   jcmkAssignVer         = 0;
+  nodeScanActive        = false;
+  nodeScanChOffset      = 0;
+  nodeScanAdminWin      = false;
 
   // Mesh mode owns the WiFi stack — prevent stopAPIfAllowed() from firing
   // WiFi.disconnect(true,true) after esp_now_init() would kill the ESP-Now driver.
@@ -605,8 +637,8 @@ void nodeModeTick() {
       jcmkCoreMac[3], jcmkCoreMac[4], jcmkCoreMac[5]);
   }
 
-  // Broadcast core requests with exponential backoff until found
-  if (!jcmkHaveCore && (now - jcmkLastReqMs >= jcmkReqInterval)) {
+  // CORE_REQUEST with backoff (only while radio is free)
+  if (!jcmkHaveCore && !nodeScanActive && (now - jcmkLastReqMs >= jcmkReqInterval)) {
     jcmkLastReqMs  = now;
     jcmkSetChannel(JCMK_ESPNOW_CH);
     jcmkSendCoreRequest();
@@ -614,18 +646,15 @@ void nodeModeTick() {
                       ? JCMK_REQ_MAX_MS : jcmkReqInterval * 2;
   }
 
-  // Heartbeat
-  if (jcmkHaveCore && (now - jcmkLastHbMs >= JCMK_HB_MS)) {
+  // Heartbeat backup timer (cycle-end heartbeat is primary; fires if scan stalls)
+  if (jcmkHaveCore && !nodeScanActive && (now - jcmkLastHbMs >= JCMK_HB_MS)) {
     jcmkLastHbMs = now;
     jcmkSetChannel(JCMK_ESPNOW_CH);
     jcmkSendHeartbeat();
   }
 
-  // Scan assigned channels and forward to Core
-  if (jcmkHaveCore && (now - jcmkLastScanMs >= JCMK_SCAN_MS)) {
-    jcmkLastScanMs = now;
-    nodeDoScan();
-  }
+  // Per-channel async scan — runs continuously while connected to Core
+  if (jcmkHaveCore) nodeDoScanTick();
 }
 
 // ================================================================
