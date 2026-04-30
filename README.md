@@ -29,6 +29,7 @@ Designed for **Seeed XIAO ESP32-S3, ESP32-C5, and ESP32-C6**, Piglet focuses on:
 - Network de-duplication  
 - Optimized for mobile wardriving or warWalking!
 - **ESP-Now Mesh Node mode** — pair with a coordinator device for multi-node wardriving
+- **Mesh auto-start on boot** — configure `meshModeOnBoot` to automatically enter Core or Node mode after uploads complete, bypassing the AP window
 
 
 ## ESP-Now Mesh Network Node Mode
@@ -58,6 +59,18 @@ While in Mesh Node mode the OLED shows:
 - Records forwarded to the coordinator
 
 > **Note:** Entering Mesh Node mode suspends normal WiGLE CSV logging. All data is sent live to the coordinator. Exiting the page restores normal scanning automatically.
+
+### Auto-Start Mesh Mode on Boot
+
+Set `meshModeOnBoot` in `/wardriver.cfg` to automatically enter mesh mode after boot uploads are complete, without needing to navigate pages manually:
+
+| Value | Behaviour |
+|-------|-----------|
+| `none` | Normal wardriving (default) |
+| `core` | Enters Mesh Core mode — acts as coordinator, logs records from nodes |
+| `node` | Enters Mesh Node mode — forwards scan results to a Core |
+
+When `core` or `node` is set the SoftAP window is **skipped entirely** (ESP-Now owns the WiFi stack and the AP would be non-functional). The device goes straight from boot uploads to the mesh page. Set via the web UI **Mesh Mode On Boot** dropdown or directly in `/wardriver.cfg`.
 
 
 ## T-Dongle C5 Variant
@@ -302,6 +315,21 @@ speedUnits=mph
 # false = disabled
 
 batteryTest=false
+
+# ------------------------------------------------------------
+# Mesh Mode On Boot
+# ------------------------------------------------------------
+# Automatically enter ESP-Now mesh mode after boot uploads complete.
+# Bypasses the SoftAP window and jumps directly to the mesh page.
+#
+#   none = Normal wardriving mode (default)
+#   core = Start as Mesh Core (coordinator) — logs data from nodes
+#   node = Start as Mesh Node — forwards scan results to a Core
+#
+# Requires a compatible coordinator (Biscuit Pro, JCMK C5 Wardriver)
+# when using node mode.
+
+meshModeOnBoot=none
 ```
 
 
