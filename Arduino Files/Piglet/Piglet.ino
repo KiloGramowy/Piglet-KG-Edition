@@ -379,7 +379,17 @@ void setup() {
     WiFi.disconnect(true, true);
     delay(100);
 
-    startAP();
+    // Skip AP when meshModeOnBoot is Core or Node — mesh init takes over the WiFi stack.
+    // The AP would be useless (and interfere with ESP-Now) in mesh mode.
+    {
+      String mm = cfg.meshModeOnBoot; mm.toLowerCase();
+      if (mm != "core" && mm != "node") {
+        startAP();
+      } else {
+        Serial.printf("[BOOT] Skipping AP window — meshModeOnBoot=%s\n",
+                      cfg.meshModeOnBoot.c_str());
+      }
+    }
   }
 
   lastStaStatus = WiFi.status();
@@ -447,6 +457,21 @@ void setup() {
   if (sdOk && cfg.batteryTest) {
     batteryTestInit();
     Serial.println("[BATT] Battery test enabled");
+  }
+
+  // Auto-start mesh mode if meshModeOnBoot=Core|Node
+  {
+    String mm = cfg.meshModeOnBoot;
+    mm.toLowerCase();
+    if (mm == "node") {
+      Serial.println("[BOOT] meshModeOnBoot=Node — entering Mesh Node mode");
+      currentPage = 5;  // mesh page on XIAO
+      enterNodeMode();
+    } else if (mm == "core") {
+      Serial.println("[BOOT] meshModeOnBoot=Core — entering Mesh Core mode");
+      currentPage = 5;
+      enterCoreMode();
+    }
   }
 
   updateOLED(0);

@@ -135,6 +135,8 @@ struct Config {
   int maxBootUploads   = 25;
   // Optional device name shown in WiGLE header and filename
   String deviceName;
+  // Auto-start mesh role on boot: "core" | "node" | "none"
+  String meshModeOnBoot = "none";
 };
 
 Config cfg;
@@ -366,6 +368,7 @@ static void cfgAssignKV(const String& k, const String& v) {
   else if (k == "wdgwarsApiKey")   cfg.wdgwarsApiKey = v;
   else if (k == "maxBootUploads") { int n = v.toInt(); if (n >= -1) cfg.maxBootUploads = n; }
   else if (k == "deviceName")      cfg.deviceName = v;
+  else if (k == "meshModeOnBoot") { String vv = v; vv.toLowerCase(); if (vv == "core" || vv == "node" || vv == "none") cfg.meshModeOnBoot = vv; }
 }
 
 static bool saveConfigToSD() {
@@ -390,6 +393,8 @@ static bool saveConfigToSD() {
   f.print("maxBootUploads=");  f.println(cfg.maxBootUploads);
   f.println("# Device name: shown in WiGLE header and filename (optional)");
   f.print("deviceName=");      f.println(cfg.deviceName);
+  f.println("# Mesh mode on boot: core | node | none");
+  f.print("meshModeOnBoot=");  f.println(cfg.meshModeOnBoot);
 
   f.flush(); f.close();
   Serial.println("[CFG] Saved OK");
@@ -2265,6 +2270,7 @@ static void handleStatus() {
   c["speedUnits"] = cfg.speedUnits;
   c["maxBootUploads"] = cfg.maxBootUploads;
   c["deviceName"]     = cfg.deviceName;
+  c["meshModeOnBoot"] = cfg.meshModeOnBoot;
 
   String out; serializeJson(doc, out);
   server.send(200, "application/json", out);
@@ -2965,7 +2971,16 @@ void setup() {
   if (!staOk) {
     WiFi.setAutoReconnect(false); WiFi.persistent(false);
     WiFi.disconnect(true, true); delay(100);
-    startAP();
+    // Skip AP when meshModeOnBoot is Core or Node — mesh init takes over the WiFi stack.
+    {
+      String mm = cfg.meshModeOnBoot; mm.toLowerCase();
+      if (mm != "core" && mm != "node") {
+        startAP();
+      } else {
+        Serial.printf("[BOOT] Skipping AP window — meshModeOnBoot=%s\n",
+                      cfg.meshModeOnBoot.c_str());
+      }
+    }
   }
 
   startWebServer();
@@ -3020,6 +3035,23 @@ void setup() {
   if (sdOk) {
     bool lfOk = openLogFile();
     Serial.print("[SD] Log file: "); Serial.println(lfOk ? "OK" : "FAIL");
+  }
+
+  // Auto-start mesh mode if meshModeOnBoot=Core|Node
+  {
+    String mm = cfg.meshModeOnBoot;
+    mm.toLowerCase();
+    if (mm == "node") {
+      Serial.println("[BOOT] meshModeOnBoot=Node — entering Mesh Node mode");
+      currentPage = 4;  // mesh page on T-Dongle
+      pageNeedsInit[4] = true;
+      enterNodeMode();
+    } else if (mm == "core") {
+      Serial.println("[BOOT] meshModeOnBoot=Core — entering Mesh Core mode");
+      currentPage = 4;
+      enterCoreMode();
+      pageNeedsInit[4] = true;
+    }
   }
 
   updateTFT(0);
