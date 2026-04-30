@@ -222,19 +222,40 @@ static void jcmkOnRecv(const esp_now_recv_info_t* info,
         coreTextBuf[coreTextTail].line[slen] = '\0';
         coreTextTail = next;
       }
-      // Data counts as a heartbeat
-      for (uint8_t i = 0; i < CORE_MAX_NODES; i++) {
-        if (coreNodes[i].active && memcmp(coreNodes[i].mac, info->src_addr, 6) == 0) {
-          coreNodes[i].lastHbMs = millis();
-          coreNodes[i].recordsRx++;
-          break;
+      // Update heartbeat for known node; queue unknown node for registration.
+      // This handles reconnect: node has jcmkHaveCore=true and skips CORE_REQUEST,
+      // but the Core can register it from any received packet (JCMK touchNode pattern).
+      {
+        bool found = false;
+        for (uint8_t i = 0; i < CORE_MAX_NODES; i++) {
+          if (coreNodes[i].active && memcmp(coreNodes[i].mac, info->src_addr, 6) == 0) {
+            coreNodes[i].lastHbMs = millis();
+            coreNodes[i].recordsRx++;
+            found = true; break;
+          }
+        }
+        if (!found) {
+          uint8_t nxt = (coreReqTail + 1) % CORE_REQ_QUEUE;
+          if (nxt != coreReqHead) {
+            memcpy(coreReqBuf[coreReqTail].mac, info->src_addr, 6);
+            coreReqTail = nxt;
+          }
         }
       }
     } else if (type == JCMK_MSG_HEARTBEAT) {
+      // Update heartbeat for known node; queue unknown node for registration.
+      bool found = false;
       for (uint8_t i = 0; i < CORE_MAX_NODES; i++) {
         if (coreNodes[i].active && memcmp(coreNodes[i].mac, info->src_addr, 6) == 0) {
           coreNodes[i].lastHbMs = millis();
-          break;
+          found = true; break;
+        }
+      }
+      if (!found) {
+        uint8_t nxt = (coreReqTail + 1) % CORE_REQ_QUEUE;
+        if (nxt != coreReqHead) {
+          memcpy(coreReqBuf[coreReqTail].mac, info->src_addr, 6);
+          coreReqTail = nxt;
         }
       }
     }
