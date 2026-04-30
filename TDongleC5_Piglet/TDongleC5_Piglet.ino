@@ -1878,6 +1878,9 @@ static void nodeDoScanTick() {
 
   if (n > 0) {
     jcmkNetworksFound += (uint32_t)n;
+    // Return to ch 6 before any ESP-Now send (JCMK sendBroadcastStringPlain pattern).
+    // The scan left the radio on the scan channel; Core listens only on ch 6.
+    jcmkSetChannel(JCMK_ESPNOW_CH);
     for (int i = 0; i < n; i++) {
       String bssid = WiFi.BSSIDstr(i);
       String ssid  = WiFi.SSID(i);
