@@ -168,8 +168,9 @@ static void jcmkSendHeartbeat() {
   memcpy(msg.magic, JCMK_MAGIC, 4);
   msg.type    = JCMK_MSG_HEARTBEAT;
   msg.counter = ++jcmkHbCounter;
-  const uint8_t* dest = jcmkHaveCore ? jcmkCoreMac : JCMK_BCAST;
-  esp_now_send(dest, (uint8_t*)&msg, sizeof(msg));
+  // Broadcast heartbeat (JCMK non-encrypted pattern: esp_now_send(BROADCAST_MAC, ...)).
+  // Core identifies sender via info->src_addr in the receive callback.
+  esp_now_send(JCMK_BCAST, (uint8_t*)&msg, sizeof(msg));
 }
 
 static void jcmkSendText(const String& s) {
@@ -518,6 +519,10 @@ void enterNodeMode() {
   jcmkSetChannel(JCMK_ESPNOW_CH);
 
   jcmkAddPeer(JCMK_BCAST);
+
+  // Random stagger before first scan (JCMK begin() pattern: delay(random(100,5000))).
+  // Prevents multiple nodes starting cycles in sync and flooding simultaneously.
+  delay(random(200, 3000));
 
   meshNodeActive = true;
   Serial.println("[MESH] ESP-Now ready — searching for Core on ch 6...");
