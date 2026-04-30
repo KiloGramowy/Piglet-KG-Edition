@@ -373,6 +373,13 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         </select>
       </div>
       <div><label>Max Files to Auto-Upload at Boot (-1=all, 0=off)</label><input id="maxBootUploads" type="number" value="25" min="-1" max="999"></div>
+      <div><label>Mesh Mode on Boot</label>
+        <select id="meshModeOnBoot">
+          <option value="none">None &mdash; Solo Wardriving (default)</option>
+          <option value="node">Node &mdash; Mesh Scanner</option>
+          <option value="core">Core &mdash; Mesh Coordinator</option>
+        </select>
+      </div>
     </div>
     <div class="row mt-md">
       <button class="btn-primary" onclick="saveCfg()">Save Config</button>
@@ -487,7 +494,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -568,7 +575,7 @@ async function deleteAllLogs(){
 
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -827,6 +834,7 @@ static void handleStatus() {
   c["batteryTest"] = cfg.batteryTest;
   c["maxBootUploads"] = cfg.maxBootUploads;
   c["deviceName"]     = cfg.deviceName;
+  c["meshModeOnBoot"] = cfg.meshModeOnBoot;
 
   String output;
   serializeJson(doc, output);

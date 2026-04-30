@@ -32,6 +32,12 @@ struct Config {
   // E.g. deviceName=rover1  →  device=Piglet-rover1  /  rover1_Piglet_WiGLE_....csv
   // Leave empty for default ("Piglet-Wardriver" / "WiGLE_....csv").
   String deviceName;
+
+  // Auto-start mesh mode after boot uploads: core, node, or none (default).
+  // core — become the mesh coordinator (receives wardriving records from nodes).
+  // node — become a scanning node that forwards records to the Core.
+  // none — normal solo wardriving mode.
+  String meshModeOnBoot = "none";
 };
 
 const PinMap& detectPinsByChip();

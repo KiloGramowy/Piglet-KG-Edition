@@ -117,8 +117,12 @@ void cfgAssignKV(const String& k, const String& v) {
     int n = v.toInt();
     if (n >= -1) cfg.maxBootUploads = n;  // -1=all, 0=disabled, 1+=limited
   }
-  else if (k == "wdgwarsApiKey") cfg.wdgwarsApiKey = v;
-  else if (k == "deviceName")    cfg.deviceName = v;
+  else if (k == "wdgwarsApiKey")    cfg.wdgwarsApiKey = v;
+  else if (k == "deviceName")       cfg.deviceName = v;
+  else if (k == "meshModeOnBoot") {
+    String vv = v; vv.toLowerCase();
+    if (vv == "core" || vv == "node" || vv == "none") cfg.meshModeOnBoot = vv;
+  }
 }
 
 // ---------------- Load / Save ----------------
@@ -268,6 +272,13 @@ bool saveConfigToSD() {
   f.println("# Device name — identifies this Piglet in WiGLE headers and filenames.");
   f.println("# Alphanumeric + _ - only.  E.g.: rover1  backpack  car");
   f.print("deviceName="); f.println(cfg.deviceName);
+
+  f.println("");
+  f.println("# Mesh mode on boot: Core, Node, or None (default).");
+  f.println("# Core  — become the mesh coordinator after uploads complete.");
+  f.println("# Node  — become a scanning mesh node after uploads complete.");
+  f.println("# None  — normal solo wardriving (default).");
+  f.print("meshModeOnBoot="); f.println(cfg.meshModeOnBoot);
 
   f.flush();
   f.close();
