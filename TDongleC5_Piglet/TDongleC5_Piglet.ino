@@ -1568,7 +1568,7 @@ static const uint32_t CORE_HB_MS         = 5000;
 static const uint32_t CORE_NODE_TIMEOUT  = 45000;  // 45 s — accounts for blocking scan latency
 
 #define CORE_REQ_QUEUE   4
-#define CORE_TEXT_QUEUE 16
+#define CORE_TEXT_QUEUE 64   // large enough for burst from two nodes per cycle
 struct CorReqSlot  { uint8_t mac[6]; };
 struct CorTextSlot { char    line[JCMK_TEXT_MAX + 1]; };
 static CorReqSlot         coreReqBuf[CORE_REQ_QUEUE];
@@ -1620,8 +1620,9 @@ static void jcmkSendText(const String& s) {
   msg.text[slen] = '\0';
   // magic(4) + type(1) + counter(4) + len(2) + text(slen+1)
   size_t pktLen = 11 + slen + 1;
-  const uint8_t* dest = jcmkHaveCore ? jcmkCoreMac : JCMK_BCAST;
-  esp_now_send(dest, (uint8_t*)&msg, pktLen);
+  // Broadcast TEXT (JCMK non-encrypted pattern): no ACK/retry pressure, two nodes
+  // can send simultaneously without waiting. Core identifies sender via src_addr.
+  esp_now_send(JCMK_BCAST, (uint8_t*)&msg, pktLen);
 }
 
 // ---- Core forward decl (used inside jcmkOnRecv callback) ----
