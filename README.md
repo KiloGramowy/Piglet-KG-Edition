@@ -113,7 +113,7 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are included in the ESP32 
 
 - I2C GPS module (ATGM336H)
 - 128×64 SSD1306 OLED display (I2C)
-- I2C SD card module
+- SPI SD card module
 - Optional LiPo battery connected to XIAO battery inputs
 
 ### Peripheral Sourcing  
