@@ -641,17 +641,21 @@ static bool uploadFileToWdgwars(const String& path) {
     if (!inBody){if(line.length()==0) inBody=true;} else{body+=line;if(body.length()>512) break;}
   }
   client.stop();
+  // Accept 200 OK and 201 Created — wdgwars.pl may return either
   Serial.printf("[WDGWars] HTTP %d  %s\n", code, body.c_str());
-  if (code==200) {
+  if (code==200 || code==201) {
     int idx=body.indexOf("merged_samples");
     if (idx>=0) {
       int col=body.indexOf(':',idx); int start=col+1;
       while(start<(int)body.length()&&!isDigit(body[start])) start++;
       int end=start; while(end<(int)body.length()&&isDigit(body[end])) end++;
-      if(end>start) Serial.printf("[WDGWars] Upload accepted — merged_samples: %d\n",body.substring(start,end).toInt());
-    } else { Serial.println("[WDGWars] Upload accepted"); }
+      if(end>start) Serial.printf("[WDGWars] Upload accepted (%d) — merged_samples: %d\n",code,body.substring(start,end).toInt());
+    } else { Serial.printf("[WDGWars] Upload accepted (%d)\n", code); }
+    uploadLastResult = "WDGW OK (" + String(code) + ")";
     return true;
   }
+  uploadLastResult = "WDGW fail (" + String(code) + ")";
+  Serial.printf("[WDGWars] Upload FAILED HTTP %d: %s\n", code, body.c_str());
   return false;
 }
 
