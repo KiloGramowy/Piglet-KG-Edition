@@ -612,7 +612,7 @@ static bool uploadFileToWdgwars(const String& path) {
     if (client.connect(WDGWARS_HOST, WDGWARS_PORT)) { connected=true; break; }
     client.stop(); delay(500); yield();
   }
-  if (!connected) { f.close(); return false; }
+  if (!connected) { uploadLastResult = "WDGW: TLS connect fail"; f.close(); return false; }
 
   client.print("POST /api/upload-csv HTTP/1.0\r\n");
   client.print(String("Host: ")+WDGWARS_HOST+"\r\n");
@@ -627,7 +627,7 @@ static bool uploadFileToWdgwars(const String& path) {
 
   uint32_t ws = millis();
   while (!client.available() && client.connected() && (millis()-ws)<30000) { delay(100); yield(); }
-  if (!client.available()) { client.stop(); return false; }
+  if (!client.available()) { uploadLastResult = "WDGW: no response (timeout)"; client.stop(); return false; }
 
   String status = client.readStringUntil('\n'); status.trim();
   int code = 0;

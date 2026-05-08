@@ -424,6 +424,7 @@ bool uploadFileToWdgwars(const String& path) {
   }
 
   if (!connected) {
+    uploadLastResult = "WDGW: TLS connect fail";
     Serial.println("[WDGWars] TLS connect failed after 3 attempts");
     f.close();
     return false;
@@ -459,7 +460,8 @@ bool uploadFileToWdgwars(const String& path) {
 
   if (!client.available()) {
     client.stop();
-    Serial.println("[WDGWars] No response");
+    uploadLastResult = "WDGW: no response (timeout)";
+    Serial.println("[WDGWars] No response after 30s");
     return false;
   }
 
