@@ -440,28 +440,55 @@ bool uploadFileToWdgwars(const String& path) {
 
   client.print(pre);
 
-  uint8_t buf[1024];
-  while (true) {
+  // Stream file with partial-write retry; track actual bytes sent.
+  uint32_t fileSent = 0;
+  uint8_t buf[512];  // modest chunk size helps with TLS record framing
+  bool writeError = false;
+  while (!writeError) {
     int n = f.read(buf, sizeof(buf));
     if (n <= 0) break;
-    client.write(buf, n);
+    int offset = 0;
+    while (offset < n) {
+      int w = client.write(buf + offset, n - offset);
+      if (w <= 0) { writeError = true; break; }
+      offset += w;
+      fileSent += (uint32_t)w;
+    }
     yield();
   }
   f.close();
   client.print(post);
   client.flush();
 
-  // Wait for response
+  uint32_t totalSent = (uint32_t)pre.length() + fileSent + (uint32_t)post.length();
+  Serial.printf("[WDGWars] ContentLen=%u  sent=%u  (%s)\n",
+                contentLen, totalSent,
+                (totalSent == contentLen) ? "MATCH" : "*** MISMATCH ***");
+  if (writeError || totalSent != contentLen) {
+    client.stop();
+    uploadLastResult = "WDGW: write error (body short)";
+    Serial.println("[WDGWars] Body write incomplete — aborting");
+    return false;
+  }
+
+  // Wait for response — distinguish real timeout from server closing connection
   uint32_t waitStart = millis();
-  while (!client.available() && client.connected() && (millis() - waitStart) < 30000) {
+  while (!client.available() && client.connected() && (millis() - waitStart) < 60000) {
     delay(100);
     yield();
   }
+  uint32_t elapsed = millis() - waitStart;
 
   if (!client.available()) {
     client.stop();
-    uploadLastResult = "WDGW: no response (timeout)";
-    Serial.println("[WDGWars] No response after 30s");
+    bool connClosed = !client.connected();
+    if (connClosed) {
+      uploadLastResult = "WDGW: conn closed (" + String(elapsed) + "ms)";
+      Serial.printf("[WDGWars] Server closed connection after %lums (no data)\n", (unsigned long)elapsed);
+    } else {
+      uploadLastResult = "WDGW: timeout (60s)";
+      Serial.printf("[WDGWars] No response after %lums — server may be waiting for more body\n", (unsigned long)elapsed);
+    }
     return false;
   }
 

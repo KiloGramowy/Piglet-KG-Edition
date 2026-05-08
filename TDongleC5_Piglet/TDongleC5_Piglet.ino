@@ -620,14 +620,32 @@ static bool uploadFileToWdgwars(const String& path) {
   client.print(String("Content-Type: multipart/form-data; boundary=")+boundary+"\r\n");
   client.print(String("Content-Length: ")+String(contentLen)+"\r\nConnection: close\r\n\r\n");
   client.print(pre);
-  uint8_t buf[1024];
-  while (true) { int n=f.read(buf,sizeof(buf)); if(n<=0) break; client.write(buf,n); yield(); }
+  uint32_t fileSent = 0; bool wErr = false;
+  uint8_t buf[512];
+  while (!wErr) {
+    int n = f.read(buf, sizeof(buf)); if (n <= 0) break;
+    int off = 0;
+    while (off < n) { int w = client.write(buf+off, n-off); if (w<=0){wErr=true;break;} off+=w; fileSent+=w; }
+    yield();
+  }
   f.close();
   client.print(post); client.flush();
+  uint32_t totalSent = (uint32_t)pre.length() + fileSent + (uint32_t)post.length();
+  Serial.printf("[WDGWars] ContentLen=%u sent=%u (%s)\n", contentLen, totalSent,
+                (totalSent==contentLen)?"MATCH":"*** MISMATCH ***");
+  if (wErr || totalSent != contentLen) {
+    uploadLastResult = "WDGW: write error (body short)"; client.stop(); return false;
+  }
 
   uint32_t ws = millis();
-  while (!client.available() && client.connected() && (millis()-ws)<30000) { delay(100); yield(); }
-  if (!client.available()) { uploadLastResult = "WDGW: no response (timeout)"; client.stop(); return false; }
+  while (!client.available() && client.connected() && (millis()-ws)<60000) { delay(100); yield(); }
+  uint32_t elapsed = millis()-ws;
+  if (!client.available()) {
+    bool cc = !client.connected();
+    uploadLastResult = cc ? "WDGW: conn closed ("+String(elapsed)+"ms)" : "WDGW: timeout (60s)";
+    Serial.printf("[WDGWars] No data after %lums (%s)\n", (unsigned long)elapsed, cc?"conn closed":"timeout");
+    client.stop(); return false;
+  }
 
   String status = client.readStringUntil('\n'); status.trim();
   int code = 0;
