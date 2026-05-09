@@ -231,6 +231,7 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   line += "WIFI";
 
   logFile.println(line);
+  Serial.println(line);   // Mirror to USB serial for Ragnar live-stream
 
   // Flush less often to avoid stalls (SD writes can block hard)
   static uint32_t lastFlushMs = 0;
