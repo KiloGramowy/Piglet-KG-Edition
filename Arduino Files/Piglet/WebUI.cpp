@@ -5,6 +5,7 @@
 #include "Display.h"
 #include "WigleUpload.h"
 #include <ArduinoJson.h>
+#include <zlib.h>
 
 // ---------------- Embedded HTML ----------------
 static const char INDEX_HTML[] PROGMEM = R"HTML(
@@ -395,7 +396,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     <h3>SD Card Files</h3>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <button class="btn-sm" onclick="loadFiles()">&#8635; Refresh</button>
-      <button class="btn-sm" onclick="window.location.href='/downloadAll'">&#11015; Download All</button>
+      <button class="btn-sm" onclick="window.location.href='/downloadAll'">&#11015; Download All (CSV.GZ)</button>
       <button class="btn-sm btn-danger" onclick="deleteAllLogs()">&#128465; Delete All</button>
     </div>
     <div id="files" style="font-size:14px">Loading&hellip;</div>
@@ -1157,127 +1158,98 @@ static void handleWigleUploadOne() {
   server.send(ok ? 200 : 500, "application/json", out);
 }
 
-// ---- ZIP helpers — used by handleDownloadAll ----
-
-static uint32_t zipCrc32(uint32_t crc, const uint8_t* buf, size_t len) {
-  // Compact nibble-table CRC32 (ZIP / ISO 3309 polynomial)
-  static const uint32_t T[16] = {
-    0x00000000,0x1DB71064,0x3B6E20C8,0x26D930AC,
-    0x76DC4190,0x6B6B51F4,0x4DB26158,0x5005713C,
-    0xEDB88320,0xF00F9344,0xD6D6A3E8,0xCB61B38C,
-    0x9B64C2B0,0x86D3D2D4,0xA00AE278,0xBDBDF21C
-  };
-  crc = ~crc;
-  for (size_t i = 0; i < len; i++) {
-    crc = (crc >> 4) ^ T[(crc ^ buf[i]) & 0xF];
-    crc = (crc >> 4) ^ T[(crc ^ (buf[i] >> 4)) & 0xF];
-  }
-  return ~crc;
-}
-
-static void zipW16(WiFiClient& cl, uint16_t v) {
-  uint8_t b[2] = { uint8_t(v), uint8_t(v >> 8) }; cl.write(b, 2);
-}
-static void zipW32(WiFiClient& cl, uint32_t v) {
-  uint8_t b[4] = { uint8_t(v), uint8_t(v>>8), uint8_t(v>>16), uint8_t(v>>24) }; cl.write(b, 4);
-}
-
-// Streams all CSV files from /logs and /uploaded as a single ZIP download.
-// Uses STORE (no compression) with data descriptors so CRC can be computed
-// on-the-fly in a single pass without buffering the whole archive.
+// Streams all CSVs from /logs and /uploaded merged into one gzip-compressed CSV.
+// Non-first files have their 2-line WiGLE header stripped so the result is a
+// single valid WiGLE CSV that can be uploaded directly to WiGLE.net.
+// Uses HTTP chunked transfer (size unknown until compression completes).
 static void handleDownloadAll() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
 
-  struct ZEntry { String path, name; uint32_t size, crc, off; };
-  std::vector<ZEntry> ents;
-
+  std::vector<String> paths;
   const char* dirs[] = { "/logs", "/uploaded" };
   for (const char* d : dirs) {
     File root = SD.open(d); if (!root) continue;
     File f = root.openNextFile();
     while (f) {
       String p = normalizeSdPath(d, f.name());
-      if (p.length() > 0 && !(currentCsvPath.length() && p == currentCsvPath)) {
-        String bname = p.substring(p.lastIndexOf('/') + 1);
-        ents.push_back({p, bname, (uint32_t)f.size(), 0, 0});
-      }
+      if (p.length() > 0 && !(currentCsvPath.length() && p == currentCsvPath))
+        paths.push_back(p);
       f.close(); f = root.openNextFile();
     }
     root.close();
   }
 
-  if (ents.empty()) { server.send(200, "text/plain", "No files to download"); return; }
+  if (paths.empty()) { server.send(200, "text/plain", "No files to download"); return; }
 
-  // Compute local-header offsets and total ZIP size
-  // Per entry: local_hdr(30+nl) + data(size) + data_descriptor(16) = 46+nl+size
-  uint32_t pos = 0;
-  for (auto& e : ents) {
-    e.off = pos;
-    pos += 46 + (uint32_t)e.name.length() + e.size;
-  }
-  uint32_t cdOff = pos;
-  uint32_t cdSz  = 0;
-  for (auto& e : ents) cdSz += 46 + (uint32_t)e.name.length();
-  uint32_t total = cdOff + cdSz + 22;
-
-  server.sendHeader("Content-Disposition", "attachment; filename=\"piglet_logs.zip\"");
-  server.setContentLength(total);
-  server.send(200, "application/zip", "");
+  // Chunked transfer — compressed size is not known in advance
+  server.sendHeader("Content-Disposition", "attachment; filename=\"piglet_logs.csv.gz\"");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/gzip", "");
   WiFiClient cl = server.client();
-  uint8_t buf[512];
 
-  // --- Local file entries ---
-  for (auto& e : ents) {
-    uint16_t nl = (uint16_t)e.name.length();
-    // Local file header (30 bytes + filename); bit 3 = data descriptor follows
-    cl.write((const uint8_t*)"\x50\x4B\x03\x04", 4);
-    zipW16(cl,20); zipW16(cl,8);  zipW16(cl,0); // ver, flags(bit3), method(STORE)
-    zipW16(cl,0);  zipW16(cl,0);                 // mod time, date
-    zipW32(cl,0);  zipW32(cl,0); zipW32(cl,0);  // crc, csize, usize (deferred)
-    zipW16(cl,nl); zipW16(cl,0);                 // fname len, extra len
-    cl.write((const uint8_t*)e.name.c_str(), nl);
+  // Init gzip stream: windowBits 15+16 = RFC 1952 gzip wrapper
+  z_stream zs;
+  memset(&zs, 0, sizeof(zs));
+  if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                   15 + 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+    cl.write((const uint8_t*)"0\r\n\r\n", 5);
+    return;
+  }
 
-    // Stream file data, compute CRC32
-    uint32_t crc = 0, written = 0;
-    File f = SD.open(e.path, FILE_READ);
-    if (f) {
-      while (true) {
-        int n = f.read(buf, sizeof(buf)); if (n <= 0) break;
-        crc = zipCrc32(crc, buf, (size_t)n);
-        cl.write(buf, (size_t)n);
-        written += (uint32_t)n;
-        yield();
-      }
-      f.close();
+  uint8_t inBuf[512], outBuf[512];
+
+  // Write one HTTP chunk (hex-size CRLF data CRLF)
+  auto writeChunk = [&](const uint8_t* d, size_t n) {
+    if (!n) return;
+    char hdr[10]; snprintf(hdr, sizeof(hdr), "%X\r\n", (unsigned)n);
+    cl.write((const uint8_t*)hdr, strlen(hdr));
+    cl.write(d, n);
+    cl.write((const uint8_t*)"\r\n", 2);
+  };
+
+  // Feed a block into deflate, emit all available output as chunks
+  auto compress = [&](const uint8_t* in, uInt len, int flush) {
+    zs.next_in  = (z_const Bytef*)in;
+    zs.avail_in = len;
+    do {
+      zs.next_out  = outBuf;
+      zs.avail_out = sizeof(outBuf);
+      deflate(&zs, flush);
+      size_t have = sizeof(outBuf) - zs.avail_out;
+      if (have) writeChunk(outBuf, have);
+    } while (zs.avail_in > 0 || zs.avail_out == 0);
+  };
+
+  bool first = true;
+  for (const String& path : paths) {
+    File f = SD.open(path, FILE_READ); if (!f) continue;
+    if (!first) {
+      // Strip the 2-line WiGLE header (app line + column-names line)
+      if (f.available()) f.readStringUntil('\n');
+      if (f.available()) f.readStringUntil('\n');
     }
-    e.crc  = crc;
-    e.size = written; // use actual bytes written for CD accuracy
-
-    // Data descriptor: PK\x07\x08 + crc + compressed_size + uncompressed_size
-    cl.write((const uint8_t*)"\x50\x4B\x07\x08", 4);
-    zipW32(cl,crc); zipW32(cl,written); zipW32(cl,written);
+    first = false;
+    for (;;) {
+      int n = f.read(inBuf, sizeof(inBuf)); if (n <= 0) break;
+      compress(inBuf, (uInt)n, Z_NO_FLUSH);
+      yield();
+    }
+    f.close();
   }
 
-  // --- Central directory ---
-  for (auto& e : ents) {
-    uint16_t nl = (uint16_t)e.name.length();
-    cl.write((const uint8_t*)"\x50\x4B\x01\x02", 4);
-    zipW16(cl,20); zipW16(cl,20); zipW16(cl,8);         // versions, flags
-    zipW16(cl,0);  zipW16(cl,0);  zipW16(cl,0);         // method, time, date
-    zipW32(cl,e.crc); zipW32(cl,e.size); zipW32(cl,e.size); // crc, sizes
-    zipW16(cl,nl); zipW16(cl,0);  zipW16(cl,0);         // fname, extra, comment
-    zipW16(cl,0);  zipW16(cl,0);  zipW32(cl,0);         // disk, int attr, ext attr
-    zipW32(cl,e.off);
-    cl.write((const uint8_t*)e.name.c_str(), nl);
-  }
+  // Finalise gzip stream
+  int zret;
+  do {
+    zs.next_out  = outBuf;
+    zs.avail_out = sizeof(outBuf);
+    zret = deflate(&zs, Z_FINISH);
+    size_t have = sizeof(outBuf) - zs.avail_out;
+    if (have) writeChunk(outBuf, have);
+  } while (zret != Z_STREAM_END);
+  deflateEnd(&zs);
 
-  // --- End of central directory (22 bytes) ---
-  uint16_t nc = (uint16_t)ents.size();
-  cl.write((const uint8_t*)"\x50\x4B\x05\x06", 4);
-  zipW16(cl,0); zipW16(cl,0);    // disk numbers
-  zipW16(cl,nc); zipW16(cl,nc);  // entry counts
-  zipW32(cl,cdSz); zipW32(cl,cdOff); // CD size, offset
-  zipW16(cl,0);                   // comment length
+  // Terminate chunked transfer
+  cl.write((const uint8_t*)"0\r\n\r\n", 5);
 }
 
 // ---------------- Server Init ----------------
