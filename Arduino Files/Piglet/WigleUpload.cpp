@@ -430,8 +430,8 @@ bool uploadFileToWdgwars(const String& path) {
     return false;
   }
 
-  // HTTP request — auth via X-API-Key (not Basic)
-  client.print("POST /api/upload-csv HTTP/1.0\r\n");
+  // HTTP request — WDGoWars V2 async endpoint
+  client.print("POST /api/v2/upload-csv HTTP/1.0\r\n");
   client.print(String("Host: ") + WDGWARS_HOST + "\r\n");
   client.print(String("X-API-Key: ") + cfg.wdgwarsApiKey + "\r\n");
   client.print(String("Content-Type: multipart/form-data; boundary=") + boundary + "\r\n");
@@ -519,33 +519,70 @@ bool uploadFileToWdgwars(const String& path) {
   }
   client.stop();
 
-  // Log the HTTP status and whatever the server returned
-  Serial.printf("[WDGWars] HTTP %d\n", code);
-  if (body.length() > 0) {
-    Serial.printf("[WDGWars] Server: %s\n", body.c_str());
-  }
+  Serial.printf("[WDGWars] HTTP %d  body: %s\n", code, body.substring(0, 100).c_str());
 
-  // Accept 200 OK and 201 Created — wdgwars.pl may return either
-  if (code == 200 || code == 201) {
-    // Try to extract merged_samples from JSON for a friendlier log line
-    int idx = body.indexOf("merged_samples");
-    if (idx >= 0) {
-      int colon = body.indexOf(':', idx);
-      if (colon >= 0) {
-        int start = colon + 1;
-        while (start < (int)body.length() && !isDigit(body[start])) start++;
-        int end = start;
-        while (end < (int)body.length() && isDigit(body[end])) end++;
-        if (end > start) {
-          int samples = body.substring(start, end).toInt();
-          Serial.printf("[WDGWars] Upload accepted (%d) — merged_samples: %d\n", code, samples);
-        }
-      }
-    } else {
-      Serial.printf("[WDGWars] Upload accepted (%d)\n", code);
+  // V2 API: HTTP 202 Accepted — async job submitted
+  if (code == 202) {
+    // Extract job_id from {"ok":true,"job_id":42,...}
+    int jobId = 0;
+    int ji = body.indexOf("\"job_id\":");
+    if (ji >= 0) jobId = body.substring(ji + 9).toInt();
+    if (jobId <= 0) {
+      uploadLastResult = "WDGW: no job_id in 202";
+      Serial.println("[WDGWars] 202 but no job_id in response");
+      return false;
     }
-    uploadLastResult = "WDGW OK (" + String(code) + ")";
-    return true;
+    Serial.printf("[WDGWars] Job %d submitted, polling for result...\n", jobId);
+    String jobPath = String("/api/v2/upload-job/") + String(jobId);
+
+    // Poll up to 15 times with 3 s intervals (45 s max total)
+    for (int poll = 1; poll <= 15; poll++) {
+      delay(3000); yield();
+
+      WiFiClientSecure pc;
+      pc.setInsecure(); pc.setTimeout(15000);
+      if (!pc.connect(WDGWARS_HOST, WDGWARS_PORT)) {
+        Serial.printf("[WDGWars] Poll %d: connect fail, retrying\n", poll);
+        continue;
+      }
+      pc.print("GET " + jobPath + " HTTP/1.0\r\n");
+      pc.print(String("Host: ") + WDGWARS_HOST + "\r\n");
+      pc.print(String("X-API-Key: ") + cfg.wdgwarsApiKey + "\r\n");
+      pc.print("Connection: close\r\n\r\n");
+
+      uint32_t pw = millis();
+      while (!pc.available() && pc.connected() && (millis() - pw) < 10000) { delay(100); yield(); }
+      if (!pc.available()) { pc.stop(); continue; }
+
+      pc.readStringUntil('\n');  // skip HTTP status line
+      String pb = ""; bool pInBody = false;
+      while (pc.connected() || pc.available()) {
+        String ln = pc.readStringUntil('\n'); ln.trim();
+        if (!pInBody) { if (ln.length() == 0) pInBody = true; }
+        else { pb += ln; if (pb.length() > 512) break; }
+      }
+      pc.stop();
+      Serial.printf("[WDGWars] Poll %d: %s\n", poll, pb.substring(0, 80).c_str());
+
+      if (pb.indexOf("\"done\"") >= 0) {
+        // Extract imported count from result object
+        int imp = 0;
+        int ii = pb.indexOf("\"imported\":");
+        if (ii >= 0) imp = pb.substring(ii + 11).toInt();
+        uploadLastResult = "WDGW OK (" + String(imp) + " net)";
+        Serial.printf("[WDGWars] Job %d done — imported: %d\n", jobId, imp);
+        return true;
+      }
+      if (pb.indexOf("\"failed\"") >= 0) {
+        uploadLastResult = "WDGW: job failed";
+        Serial.printf("[WDGWars] Job %d failed\n", jobId);
+        return false;
+      }
+      // status still "processing" — keep polling
+    }
+    uploadLastResult = "WDGW: poll timeout";
+    Serial.printf("[WDGWars] Job %d: no result after 45s\n", jobId);
+    return false;
   }
 
   uploadLastResult = "WDGW fail (" + String(code) + ")";

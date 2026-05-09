@@ -191,9 +191,21 @@ bool openLogFile() {
     String safe = sanitiseDeviceName(cfg.deviceName);
     if (safe.length() > 0) deviceField = "Piglet-" + safe;
   }
-  logFile.print("WigleWifi-1.4,appRelease=1,model=Xiao-ESP32S3,release=1,device=");
-  logFile.println(deviceField);
-  logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
+
+  // Derive a human-readable board model from the config key
+  String boardModel = "Xiao-ESP32S3"; // default / "auto"
+  if (cfg.board == "c5")  boardModel = "Xiao-ESP32C5";
+  else if (cfg.board == "c6")  boardModel = "Xiao-ESP32C6";
+  else if (cfg.board == "exp") boardModel = "Xiao-ESP32S3-Exp";
+
+  // WiGLE WiFi 1.6 header
+  logFile.print("WigleWifi-1.6,appRelease=");
+  logFile.print(FIRMWARE_VERSION);
+  logFile.print(",model="); logFile.print(boardModel);
+  logFile.print(",release=1,device="); logFile.print(deviceField);
+  logFile.print(",board="); logFile.print(boardModel);
+  logFile.println(",brand=Piglet");
+  logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
   logFile.flush();
 
   Serial.println("[SD] Log file initialized with WiGLE headers");
@@ -223,12 +235,18 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   line += auth; line += ",";
   line += firstSeen; line += ",";
   line += String(channel); line += ",";
+  // Frequency in MHz derived from channel number (WiGLE 1.6 requirement)
+  uint32_t freq = 0;
+  if      (channel >= 1  && channel <= 13) freq = 2407u + (uint32_t)channel * 5;
+  else if (channel == 14)                  freq = 2484u;
+  else if (channel >= 32)                  freq = 5000u + (uint32_t)channel * 5;
+  line += String(freq); line += ",";
   line += String(rssi); line += ",";
   line += String(lat, 6); line += ",";
   line += String(lon, 6); line += ",";
   line += String(altM, 1); line += ",";
   line += String(accM, 1); line += ",";
-  line += "WIFI";
+  line += ",0,WIFI"; // RCOIs (empty), MfgrId (0), Type
 
   logFile.println(line);
   Serial.println(line);   // Mirror to USB serial for Ragnar live-stream

@@ -494,9 +494,13 @@ static bool openLogFile() {
     String safe = tdongleSanitiseName(cfg.deviceName);
     if (safe.length() > 0) deviceField = "Piglet-TDongle-" + safe;
   }
-  logFile.print("WigleWifi-1.4,appRelease=1,model=LilyGo-T-Dongle-C5,release=1,device=");
-  logFile.println(deviceField);
-  logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
+  // WiGLE WiFi 1.6 header
+  logFile.print("WigleWifi-1.6,appRelease=");
+  logFile.print(FIRMWARE_VERSION);
+  logFile.print(",model=LilyGo-T-Dongle-C5,release=1,device=");
+  logFile.print(deviceField);
+  logFile.println(",board=LilyGo-T-Dongle-C5,brand=Piglet");
+  logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
   logFile.flush();
   return true;
 }
@@ -516,12 +520,18 @@ static void appendWigleRow(const String& mac, const String& ssid, const String& 
   line += auth; line += ",";
   line += firstSeen; line += ",";
   line += String(channel); line += ",";
+  // Frequency in MHz (WiGLE 1.6)
+  uint32_t freq = 0;
+  if      (channel >= 1  && channel <= 13) freq = 2407u + (uint32_t)channel * 5;
+  else if (channel == 14)                  freq = 2484u;
+  else if (channel >= 32)                  freq = 5000u + (uint32_t)channel * 5;
+  line += String(freq); line += ",";
   line += String(rssi); line += ",";
   line += String(lat, 6); line += ",";
   line += String(lon, 6); line += ",";
   line += String(altM, 1); line += ",";
   line += String(accM, 1); line += ",";
-  line += "WIFI";
+  line += ",0,WIFI"; // RCOIs (empty), MfgrId (0), Type
 
   digitalWrite(PINS.tft_cs, HIGH);
   logFile.println(line);
@@ -614,7 +624,7 @@ static bool uploadFileToWdgwars(const String& path) {
   }
   if (!connected) { uploadLastResult = "WDGW: TLS connect fail"; f.close(); return false; }
 
-  client.print("POST /api/upload-csv HTTP/1.0\r\n");
+  client.print("POST /api/v2/upload-csv HTTP/1.0\r\n");
   client.print(String("Host: ")+WDGWARS_HOST+"\r\n");
   client.print(String("X-API-Key: ")+cfg.wdgwarsApiKey+"\r\n");
   client.print(String("Content-Type: multipart/form-data; boundary=")+boundary+"\r\n");
@@ -659,18 +669,43 @@ static bool uploadFileToWdgwars(const String& path) {
     if (!inBody){if(line.length()==0) inBody=true;} else{body+=line;if(body.length()>512) break;}
   }
   client.stop();
-  // Accept 200 OK and 201 Created — wdgwars.pl may return either
-  Serial.printf("[WDGWars] HTTP %d  %s\n", code, body.c_str());
-  if (code==200 || code==201) {
-    int idx=body.indexOf("merged_samples");
-    if (idx>=0) {
-      int col=body.indexOf(':',idx); int start=col+1;
-      while(start<(int)body.length()&&!isDigit(body[start])) start++;
-      int end=start; while(end<(int)body.length()&&isDigit(body[end])) end++;
-      if(end>start) Serial.printf("[WDGWars] Upload accepted (%d) — merged_samples: %d\n",code,body.substring(start,end).toInt());
-    } else { Serial.printf("[WDGWars] Upload accepted (%d)\n", code); }
-    uploadLastResult = "WDGW OK (" + String(code) + ")";
-    return true;
+  Serial.printf("[WDGWars] HTTP %d  body: %s\n", code, body.substring(0,100).c_str());
+  // V2 API: HTTP 202 Accepted — async job
+  if (code == 202) {
+    int jobId = 0;
+    int ji = body.indexOf("\"job_id\":");
+    if (ji >= 0) jobId = body.substring(ji + 9).toInt();
+    if (jobId <= 0) { uploadLastResult = "WDGW: no job_id"; return false; }
+    Serial.printf("[WDGWars] Job %d submitted, polling...\n", jobId);
+    String jobPath = String("/api/v2/upload-job/") + String(jobId);
+    for (int poll = 1; poll <= 15; poll++) {
+      delay(3000); yield();
+      WiFiClientSecure pc; pc.setInsecure(); pc.setTimeout(15000);
+      if (!pc.connect(WDGWARS_HOST, WDGWARS_PORT)) { continue; }
+      pc.print("GET " + jobPath + " HTTP/1.0\r\n");
+      pc.print(String("Host: ")+WDGWARS_HOST+"\r\n");
+      pc.print(String("X-API-Key: ")+cfg.wdgwarsApiKey+"\r\n");
+      pc.print("Connection: close\r\n\r\n");
+      uint32_t pw = millis();
+      while (!pc.available() && pc.connected() && (millis()-pw)<10000) { delay(100); yield(); }
+      if (!pc.available()) { pc.stop(); continue; }
+      pc.readStringUntil('\n');
+      String pb=""; bool pIn=false;
+      while (pc.connected()||pc.available()) {
+        String ln=pc.readStringUntil('\n'); ln.trim();
+        if (!pIn){if(ln.length()==0) pIn=true;} else{pb+=ln;if(pb.length()>512) break;}
+      }
+      pc.stop();
+      Serial.printf("[WDGWars] Poll %d: %s\n", poll, pb.substring(0,80).c_str());
+      if (pb.indexOf("\"done\"") >= 0) {
+        int imp=0; int ii=pb.indexOf("\"imported\":");
+        if (ii>=0) imp=pb.substring(ii+11).toInt();
+        uploadLastResult = "WDGW OK ("+String(imp)+" net)";
+        return true;
+      }
+      if (pb.indexOf("\"failed\"") >= 0) { uploadLastResult="WDGW: job failed"; return false; }
+    }
+    uploadLastResult = "WDGW: poll timeout"; return false;
   }
   uploadLastResult = "WDGW fail (" + String(code) + ")";
   Serial.printf("[WDGWars] Upload FAILED HTTP %d: %s\n", code, body.c_str());
