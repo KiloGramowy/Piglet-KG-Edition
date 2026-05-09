@@ -38,7 +38,6 @@
 #include <math.h>
 #include <esp_now.h>
 #include "esp_wifi.h"
-#include <zlib.h>
 
 // Firmware version
 #define FIRMWARE_VERSION "v2.4"
@@ -2584,9 +2583,10 @@ static void handleWigleUploadOne() {
   server.send(ok ? 200 : 500, "application/json", out);
 }
 
-// Streams all CSVs from /logs and /uploaded merged into one gzip-compressed CSV.
-// Non-first files have their 2-line WiGLE header stripped so the result is a
-// single valid WiGLE CSV that can be uploaded directly to WiGLE.net.
+// Streams all CSVs from /logs and /uploaded merged into one RFC 1952 gzip file,
+// using DEFLATE stored blocks (BTYPE=00 — no compression library required).
+// Non-first files have their 2-line WiGLE header stripped so the merged result
+// is one valid WiGLE CSV uploadable directly to WiGLE.net.
 static void handleDownloadAll() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
 
@@ -2612,14 +2612,6 @@ static void handleDownloadAll() {
   server.send(200, "application/gzip", "");
   WiFiClient cl = server.client();
 
-  z_stream zs; memset(&zs, 0, sizeof(zs));
-  if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-                   15 + 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
-    cl.write((const uint8_t*)"0\r\n\r\n", 5); return;
-  }
-
-  uint8_t inBuf[512], outBuf[512];
-
   auto writeChunk = [&](const uint8_t* d, size_t n) {
     if (!n) return;
     char hdr[10]; snprintf(hdr, sizeof(hdr), "%X\r\n", (unsigned)n);
@@ -2628,15 +2620,30 @@ static void handleDownloadAll() {
     cl.write((const uint8_t*)"\r\n", 2);
   };
 
-  auto compress = [&](const uint8_t* in, uInt len, int flush) {
-    zs.next_in = (z_const Bytef*)in; zs.avail_in = len;
-    do {
-      zs.next_out = outBuf; zs.avail_out = sizeof(outBuf);
-      deflate(&zs, flush);
-      size_t have = sizeof(outBuf) - zs.avail_out;
-      if (have) writeChunk(outBuf, have);
-    } while (zs.avail_in > 0 || zs.avail_out == 0);
+  auto crc32Up = [](uint32_t crc, const uint8_t* b, size_t n) -> uint32_t {
+    static const uint32_t T[16] = {
+      0x00000000,0x1DB71064,0x3B6E20C8,0x26D930AC,
+      0x76DC4190,0x6B6B51F4,0x4DB26158,0x5005713C,
+      0xEDB88320,0xF00F9344,0xD6D6A3E8,0xCB61B38C,
+      0x9B64C2B0,0x86D3D2D4,0xA00AE278,0xBDBDF21C
+    };
+    crc = ~crc;
+    for (size_t i = 0; i < n; i++) {
+      crc = (crc >> 4) ^ T[(crc ^ b[i]) & 0xF];
+      crc = (crc >> 4) ^ T[(crc ^ (b[i] >> 4)) & 0xF];
+    }
+    return ~crc;
   };
+
+  const uint8_t gzHdr[10] = {
+    0x1f, 0x8b, 0x08, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0xff
+  };
+  writeChunk(gzHdr, 10);
+
+  uint32_t crc = 0, isize = 0;
+  uint8_t  buf[512];
 
   bool first = true;
   for (const String& path : paths) {
@@ -2648,21 +2655,32 @@ static void handleDownloadAll() {
     }
     first = false;
     for (;;) {
-      int n = f.read(inBuf, sizeof(inBuf)); if (n <= 0) break;
-      compress(inBuf, (uInt)n, Z_NO_FLUSH);
+      int n = f.read(buf, sizeof(buf)); if (n <= 0) break;
+      uint16_t ln = (uint16_t)n;
+      uint8_t blk[5] = {
+        0x00,
+        (uint8_t)(ln & 0xFF),   (uint8_t)(ln >> 8),
+        (uint8_t)((~ln) & 0xFF),(uint8_t)((~ln) >> 8)
+      };
+      writeChunk(blk, 5);
+      writeChunk(buf, (size_t)n);
+      crc = crc32Up(crc, buf, (size_t)n);
+      isize += (uint32_t)n;
       yield();
     }
     f.close();
   }
 
-  int zret;
-  do {
-    zs.next_out = outBuf; zs.avail_out = sizeof(outBuf);
-    zret = deflate(&zs, Z_FINISH);
-    size_t have = sizeof(outBuf) - zs.avail_out;
-    if (have) writeChunk(outBuf, have);
-  } while (zret != Z_STREAM_END);
-  deflateEnd(&zs);
+  const uint8_t finalBlk[5] = { 0x01, 0x00, 0x00, 0xFF, 0xFF };
+  writeChunk(finalBlk, 5);
+
+  uint8_t trailer[8] = {
+    (uint8_t)crc,        (uint8_t)(crc >> 8),
+    (uint8_t)(crc >> 16),(uint8_t)(crc >> 24),
+    (uint8_t)isize,      (uint8_t)(isize >> 8),
+    (uint8_t)(isize >> 16),(uint8_t)(isize >> 24)
+  };
+  writeChunk(trailer, 8);
 
   cl.write((const uint8_t*)"0\r\n\r\n", 5);
 }

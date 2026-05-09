@@ -5,7 +5,6 @@
 #include "Display.h"
 #include "WigleUpload.h"
 #include <ArduinoJson.h>
-#include <zlib.h>
 
 // ---------------- Embedded HTML ----------------
 static const char INDEX_HTML[] PROGMEM = R"HTML(
@@ -1158,10 +1157,10 @@ static void handleWigleUploadOne() {
   server.send(ok ? 200 : 500, "application/json", out);
 }
 
-// Streams all CSVs from /logs and /uploaded merged into one gzip-compressed CSV.
-// Non-first files have their 2-line WiGLE header stripped so the result is a
-// single valid WiGLE CSV that can be uploaded directly to WiGLE.net.
-// Uses HTTP chunked transfer (size unknown until compression completes).
+// Streams all CSVs from /logs and /uploaded merged into one RFC 1952 gzip file,
+// using DEFLATE stored blocks (BTYPE=00 — no compression library required).
+// Non-first files have their 2-line WiGLE header stripped so the merged result
+// is one valid WiGLE CSV uploadable directly to WiGLE.net.
 static void handleDownloadAll() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
 
@@ -1181,22 +1180,11 @@ static void handleDownloadAll() {
 
   if (paths.empty()) { server.send(200, "text/plain", "No files to download"); return; }
 
-  // Chunked transfer — compressed size is not known in advance
+  // Chunked transfer — output size not known in advance
   server.sendHeader("Content-Disposition", "attachment; filename=\"piglet_logs.csv.gz\"");
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "application/gzip", "");
   WiFiClient cl = server.client();
-
-  // Init gzip stream: windowBits 15+16 = RFC 1952 gzip wrapper
-  z_stream zs;
-  memset(&zs, 0, sizeof(zs));
-  if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-                   15 + 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
-    cl.write((const uint8_t*)"0\r\n\r\n", 5);
-    return;
-  }
-
-  uint8_t inBuf[512], outBuf[512];
 
   // Write one HTTP chunk (hex-size CRLF data CRLF)
   auto writeChunk = [&](const uint8_t* d, size_t n) {
@@ -1207,48 +1195,74 @@ static void handleDownloadAll() {
     cl.write((const uint8_t*)"\r\n", 2);
   };
 
-  // Feed a block into deflate, emit all available output as chunks
-  auto compress = [&](const uint8_t* in, uInt len, int flush) {
-    zs.next_in  = (z_const Bytef*)in;
-    zs.avail_in = len;
-    do {
-      zs.next_out  = outBuf;
-      zs.avail_out = sizeof(outBuf);
-      deflate(&zs, flush);
-      size_t have = sizeof(outBuf) - zs.avail_out;
-      if (have) writeChunk(outBuf, have);
-    } while (zs.avail_in > 0 || zs.avail_out == 0);
+  // CRC32 (ISO 3309 / gzip polynomial 0xEDB88320)
+  auto crc32Up = [](uint32_t crc, const uint8_t* b, size_t n) -> uint32_t {
+    static const uint32_t T[16] = {
+      0x00000000,0x1DB71064,0x3B6E20C8,0x26D930AC,
+      0x76DC4190,0x6B6B51F4,0x4DB26158,0x5005713C,
+      0xEDB88320,0xF00F9344,0xD6D6A3E8,0xCB61B38C,
+      0x9B64C2B0,0x86D3D2D4,0xA00AE278,0xBDBDF21C
+    };
+    crc = ~crc;
+    for (size_t i = 0; i < n; i++) {
+      crc = (crc >> 4) ^ T[(crc ^ b[i]) & 0xF];
+      crc = (crc >> 4) ^ T[(crc ^ (b[i] >> 4)) & 0xF];
+    }
+    return ~crc;
   };
+
+  // RFC 1952 gzip header (10 bytes)
+  const uint8_t gzHdr[10] = {
+    0x1f, 0x8b, 0x08, 0x00,   // ID1 ID2 CM FLG
+    0x00, 0x00, 0x00, 0x00,   // MTIME = 0
+    0x00, 0xff                 // XFL OS=unknown
+  };
+  writeChunk(gzHdr, 10);
+
+  uint32_t crc   = 0;
+  uint32_t isize = 0;
+  uint8_t  buf[512];
 
   bool first = true;
   for (const String& path : paths) {
     File f = SD.open(path, FILE_READ); if (!f) continue;
     if (!first) {
-      // Strip the 2-line WiGLE header (app line + column-names line)
+      // Strip 2-line WiGLE header from non-first files
       if (f.available()) f.readStringUntil('\n');
       if (f.available()) f.readStringUntil('\n');
     }
     first = false;
     for (;;) {
-      int n = f.read(inBuf, sizeof(inBuf)); if (n <= 0) break;
-      compress(inBuf, (uInt)n, Z_NO_FLUSH);
+      int n = f.read(buf, sizeof(buf)); if (n <= 0) break;
+      // DEFLATE stored block (BFINAL=0, BTYPE=00)
+      uint16_t ln = (uint16_t)n;
+      uint8_t  blk[5] = {
+        0x00,                    // BFINAL=0, BTYPE=00
+        (uint8_t)(ln & 0xFF),   (uint8_t)(ln >> 8),   // LEN
+        (uint8_t)((~ln) & 0xFF),(uint8_t)((~ln) >> 8) // NLEN
+      };
+      writeChunk(blk, 5);
+      writeChunk(buf, (size_t)n);
+      crc    = crc32Up(crc, buf, (size_t)n);
+      isize += (uint32_t)n;
       yield();
     }
     f.close();
   }
 
-  // Finalise gzip stream
-  int zret;
-  do {
-    zs.next_out  = outBuf;
-    zs.avail_out = sizeof(outBuf);
-    zret = deflate(&zs, Z_FINISH);
-    size_t have = sizeof(outBuf) - zs.avail_out;
-    if (have) writeChunk(outBuf, have);
-  } while (zret != Z_STREAM_END);
-  deflateEnd(&zs);
+  // Final empty stored block closes the DEFLATE stream (BFINAL=1, LEN=0)
+  const uint8_t finalBlk[5] = { 0x01, 0x00, 0x00, 0xFF, 0xFF };
+  writeChunk(finalBlk, 5);
 
-  // Terminate chunked transfer
+  // Gzip trailer: CRC32 + ISIZE (both little-endian 32-bit)
+  uint8_t trailer[8] = {
+    (uint8_t)crc,        (uint8_t)(crc >> 8),
+    (uint8_t)(crc >> 16),(uint8_t)(crc >> 24),
+    (uint8_t)isize,      (uint8_t)(isize >> 8),
+    (uint8_t)(isize >> 16),(uint8_t)(isize >> 24)
+  };
+  writeChunk(trailer, 8);
+
   cl.write((const uint8_t*)"0\r\n\r\n", 5);
 }
 
