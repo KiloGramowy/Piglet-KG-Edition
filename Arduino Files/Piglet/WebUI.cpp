@@ -255,7 +255,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     <div class="logo">&#x1f437;</div>
     <div>
       <h1>Piglet Wardriver</h1>
-      <p class="sub">ESP32 Wi-Fi Scanner &amp; Logger &mdash; v2.4</p>
+      <p class="sub">ESP32 Wi-Fi Scanner &amp; Logger &mdash; v2.5</p>
     </div>
   </div>
 
@@ -1170,15 +1170,19 @@ static void handleDownloadAll() {
     File root = SD.open(d); if (!root) continue;
     File f = root.openNextFile();
     while (f) {
-      String p = normalizeSdPath(d, f.name());
-      if (p.length() > 0 && !(currentCsvPath.length() && p == currentCsvPath))
-        paths.push_back(p);
+      // Skip subdirectories and non-CSV files
+      if (!f.isDirectory()) {
+        String p = normalizeSdPath(d, f.name());
+        if (p.endsWith(".csv") && !(currentCsvPath.length() && p == currentCsvPath))
+          paths.push_back(p);
+      }
       f.close(); f = root.openNextFile();
     }
     root.close();
   }
 
-  if (paths.empty()) { server.send(200, "text/plain", "No files to download"); return; }
+  Serial.printf("[DOWNLOAD] Collected %u CSV file(s) for gzip\n", (unsigned)paths.size());
+  if (paths.empty()) { server.send(200, "text/plain", "No CSV files to download"); return; }
 
   // Chunked transfer — output size not known in advance
   server.sendHeader("Content-Disposition", "attachment; filename=\"piglet_logs.csv.gz\"");
