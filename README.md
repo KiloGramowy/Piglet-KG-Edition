@@ -3,7 +3,7 @@
 
 **Piglet** is an open-source ESP32-based wardriving platform that scans nearby Wi-Fi networks, records GPS position, saves WiGLE-compatible CSV logs to SD, and provides a real-time web UI for control, uploads, and device status.
 
-Designed for **Seeed XIAO ESP32-S3, ESP32-C5, and ESP32-C6**, Piglet focuses on:
+Designed for **[Seeed XIAO ESP32-S3](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/), [XIAO ESP32-C5](https://wiki.seeedstudio.com/xiao_esp32c5_getting_started/), and [XIAO ESP32-C6](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/)**, Piglet focuses on:
 
 - Reliable scanning while in motion  
 - Clean WiGLE-ready data collection  
@@ -103,9 +103,9 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are included in the ESP32 
 
 ### Microcontroller Boards
 
-- Seeed XIAO ESP32-S3  
-- Seeed XIAO ESP32-C5 *(required for 5 GHz scanning)*  
-- Seeed XIAO ESP32-C6  
+- [Seeed XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html)  
+- [Seeed XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html) *(required for 5 GHz scanning)*  
+- [Seeed XIAO ESP32-C6](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C6-p-5884.html)  
 - LilyGo T-Dongle C5 *(standalone variant — see above)*  
 
 ### Required Peripherals
