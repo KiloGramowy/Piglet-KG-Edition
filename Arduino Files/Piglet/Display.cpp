@@ -215,34 +215,128 @@ static void drawPig(int16_t x, int16_t y, uint8_t phase) {
   }
 }
 
+// ---- Twerk animation ----
+// Real twerk: FRONT HALF (head, front legs) stays at y.
+//             BACK HALF (body, tail, back legs) rises up by 'rise' pixels.
+// This creates the classic butt-up-front-down twerk posture.
+static void drawPigTwerk(int16_t x, int16_t y, uint8_t phase) {
+  // rise amount by phase: 0=flat, 1=high, 2=low, 3=higher
+  int8_t rise = 0;
+  if      (phase == 1) rise = 8;
+  else if (phase == 2) rise = 2;
+  else if (phase == 3) rise = 10;
+  int16_t by = y - rise;  // y-coordinate for the back half
+
+  // ---- BACK HALF (drawn first so front overlaps it) ----
+  // Body
+  display.fillRoundRect(x + 14, by + 3, 22, 15, 7, SSD1306_WHITE);
+  // Belly line
+  display.drawFastHLine(x + 15, by + 18, 20, SSD1306_WHITE);
+  // Tail: flick UP when butt is high, normal curl when low
+  if (rise >= 6) {
+    display.drawPixel(x+36, by+1, SSD1306_WHITE); display.drawPixel(x+37, by+0, SSD1306_WHITE);
+    display.drawPixel(x+38, by+0, SSD1306_WHITE); display.drawPixel(x+39, by+1, SSD1306_WHITE);
+    display.drawPixel(x+40, by+2, SSD1306_WHITE); display.drawPixel(x+41, by+1, SSD1306_WHITE);
+  } else {
+    display.drawPixel(x+36, by+6, SSD1306_WHITE); display.drawPixel(x+37, by+5, SSD1306_WHITE);
+    display.drawPixel(x+38, by+5, SSD1306_WHITE); display.drawPixel(x+39, by+6, SSD1306_WHITE);
+    display.drawPixel(x+39, by+7, SSD1306_WHITE); display.drawPixel(x+38, by+8, SSD1306_WHITE);
+    display.drawPixel(x+39, by+9, SSD1306_WHITE); display.drawPixel(x+40, by+9, SSD1306_WHITE);
+    display.drawPixel(x+41, by+8, SSD1306_WHITE);
+  }
+  // Back 2 legs — splay outward when butt is high
+  const int16_t blt = by + 18;
+  const int16_t blx[2] = { (int16_t)(x+28), (int16_t)(x+33) };
+  for (int i = 0; i < 2; i++) {
+    if (rise >= 6) {
+      display.drawLine(blx[i], blt, blx[i]+4, blt+5, SSD1306_WHITE);
+      display.drawLine(blx[i]+4, blt+5, blx[i]+6, blt+5, SSD1306_WHITE);
+    } else {
+      display.drawLine(blx[i], blt, blx[i],   blt+5, SSD1306_WHITE);
+      display.drawLine(blx[i], blt+5, blx[i]+2, blt+5, SSD1306_WHITE);
+    }
+  }
+
+  // ---- FRONT HALF (drawn on top, stays at y) ----
+  // Head
+  display.fillCircle(x + 14, y + 10, 7, SSD1306_WHITE);
+  // Snout
+  display.fillRoundRect(x + 2, y + 8, 9, 7, 3, SSD1306_WHITE);
+  // Nostrils
+  display.drawPixel(x + 4, y + 11, SSD1306_BLACK);
+  display.drawPixel(x + 6, y + 11, SSD1306_BLACK);
+  // Eye
+  display.fillRect(x + 9, y + 7, 3, 3, SSD1306_BLACK);
+  display.drawPixel(x + 10, y + 7, SSD1306_WHITE);
+  // Ear
+  display.fillTriangle(x+12,y+4, x+18,y+5, x+15,y+0, SSD1306_WHITE);
+  display.drawLine(x+14, y+2, x+16, y+4, SSD1306_BLACK);
+  // Mouth
+  display.drawLine(x+6, y+14, x+9, y+15, SSD1306_BLACK);
+  // Front 2 legs
+  const int16_t flt = y + 18;
+  const int16_t flx[2] = { (int16_t)(x+16), (int16_t)(x+22) };
+  for (int i = 0; i < 2; i++) {
+    display.drawLine(flx[i], flt, flx[i],   flt+5, SSD1306_WHITE);
+    display.drawLine(flx[i], flt+5, flx[i]+2, flt+5, SSD1306_WHITE);
+  }
+}
+
+static bool     pigTwerking_   = false;
+static uint32_t pigTwerkMs_    = 0;
+static uint8_t  pigTwerkPhase_ = 0;
+static int16_t  pigTwerkX_     = 42;
+
+void pigTwerkStart() {
+  if (pigTwerking_) return;
+  pigTwerking_   = true;
+  pigTwerkMs_    = millis();
+  pigTwerkPhase_ = 0;
+  pigTwerkX_     = pig.x;  // freeze at current position
+  Serial.println("[PIG] TWERK ACTIVATED");
+}
+
 void pigAnimTick() {
   uint32_t now = millis();
-  if (now - pig.lastMs < pig.frameMs) return;
+
+  // Twerk expires after 3 s
+  if (pigTwerking_ && (now - pigTwerkMs_ >= 3000)) {
+    pigTwerking_ = false;
+    Serial.println("[PIG] Twerk complete");
+  }
+
+  // Faster frame rate during twerk
+  uint16_t fms = pigTwerking_ ? 55 : pig.frameMs;
+  if (now - pig.lastMs < fms) return;
   pig.lastMs = now;
 
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
-
-  // Header
   display.setTextSize(2);
   display.setCursor(0, 0);
   display.print("Piglet");
   display.drawFastHLine(0, OLED_YELLOW_H - 1, OLED_W, SSD1306_WHITE);
 
-  // Move + bounce
-  pig.x += pig.dx;
-  if (pig.x <= 0)              { pig.x = 0;              pig.dx =  1; }
-  if (pig.x >= (128 - PIG_W))  { pig.x = 128 - PIG_W;    pig.dx = -1; }
-
-  pig.phase = (pig.phase + 1) & 3;
-  int16_t bob = (pig.phase == 1 || pig.phase == 3) ? 1 : 0;
-
-  // Keep pig inside screen vertically
-  if (pig.y > (OLED_H - PIG_H)) {
-    pig.y = (OLED_H - PIG_H);
+  if (pigTwerking_) {
+    pigTwerkPhase_ = (pigTwerkPhase_ + 1) & 3;
+    // drawPigTwerk handles all y-offsets internally via the 'rise' per phase
+    drawPigTwerk(pigTwerkX_, pig.y, pigTwerkPhase_);
+    // Flash "OINK!" above the pig on odd phases
+    if (pigTwerkPhase_ & 1) {
+      display.setTextSize(1);
+      display.setCursor(74, OLED_YELLOW_H + 2);
+      display.print("OINK!");
+    }
+  } else {
+    // Normal walk
+    pig.x += pig.dx;
+    if (pig.x <= 0)              { pig.x = 0;              pig.dx =  1; }
+    if (pig.x >= (128 - PIG_W))  { pig.x = 128 - PIG_W;    pig.dx = -1; }
+    pig.phase = (pig.phase + 1) & 3;
+    int16_t bob = (pig.phase == 1 || pig.phase == 3) ? 1 : 0;
+    if (pig.y > (OLED_H - PIG_H)) pig.y = OLED_H - PIG_H;
+    drawPig(pig.x, pig.y + bob, pig.phase);
   }
-
-  drawPig(pig.x, pig.y + bob, pig.phase);
 
   display.display();
 }

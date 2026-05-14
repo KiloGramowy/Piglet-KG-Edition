@@ -22,5 +22,6 @@ extern PigAnim pig;
 
 void oledProgressBar(int x, int y, int w, int h, float pct);
 void updateOLED(float speedValue);
-void pigAnimTick();  // call from loop() when on pig page (faster than 500ms)
+void pigAnimTick();    // call from loop() when on pig page (faster than 500ms)
+void pigTwerkStart();  // trigger 3-second twerk mode (triple-tap on pig page)
 void showSplashScreen();

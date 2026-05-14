@@ -1492,6 +1492,77 @@ static void drawPigTFT(int16_t x, int16_t y, uint8_t phase) {
   }
 }
 
+// ---- Twerk state (T-Dongle) ----
+static bool     pigTwerking_   = false;
+static uint32_t pigTwerkMs_    = 0;
+static uint8_t  pigTwerkPhase_ = 0;
+static int16_t  pigTwerkX_     = 18;  // centered: (80-44)/2
+
+static void pigTwerkStartTFT() {
+  if (pigTwerking_) return;
+  pigTwerking_   = true;
+  pigTwerkMs_    = millis();
+  pigTwerkPhase_ = 0;
+  pigTwerkX_     = pig.x;
+  Serial.println("[PIG] TWERK ACTIVATED");
+}
+
+// Twerk draw: FRONT HALF (head, front legs) stays at y.
+//             BACK HALF (body, tail, back legs) rises up by 'rise' pixels.
+static void drawPigTwerkTFT(int16_t x, int16_t y, uint8_t phase) {
+  int8_t rise = 0;
+  if      (phase == 1) rise = 8;
+  else if (phase == 2) rise = 2;
+  else if (phase == 3) rise = 10;
+  int16_t by = y - rise;
+
+  // ---- BACK HALF (drawn first so front overlaps) ----
+  tft.fillRoundRect(x + 14, by + 3, 22, 15, 7, WHITE);
+  tft.drawFastHLine(x + 15, by + 18, 20, WHITE);
+  // Tail: flick up when butt is high
+  if (rise >= 6) {
+    tft.drawPixel(x+36,by+1,WHITE); tft.drawPixel(x+37,by+0,WHITE);
+    tft.drawPixel(x+38,by+0,WHITE); tft.drawPixel(x+39,by+1,WHITE);
+    tft.drawPixel(x+40,by+2,WHITE); tft.drawPixel(x+41,by+1,WHITE);
+  } else {
+    tft.drawPixel(x+36,by+6,WHITE); tft.drawPixel(x+37,by+5,WHITE);
+    tft.drawPixel(x+38,by+5,WHITE); tft.drawPixel(x+39,by+6,WHITE);
+    tft.drawPixel(x+39,by+7,WHITE); tft.drawPixel(x+38,by+8,WHITE);
+    tft.drawPixel(x+39,by+9,WHITE); tft.drawPixel(x+40,by+9,WHITE);
+    tft.drawPixel(x+41,by+8,WHITE);
+  }
+  // Back 2 legs — splay outward when butt is high
+  int16_t blt = by + 18;
+  const int16_t blx[2] = { (int16_t)(x+28), (int16_t)(x+33) };
+  for (int i = 0; i < 2; i++) {
+    if (rise >= 6) {
+      tft.drawLine(blx[i],   blt,   blx[i]+4, blt+5, WHITE);
+      tft.drawLine(blx[i]+4, blt+5, blx[i]+6, blt+5, WHITE);
+    } else {
+      tft.drawLine(blx[i], blt,   blx[i],   blt+5, WHITE);
+      tft.drawLine(blx[i], blt+5, blx[i]+2, blt+5, WHITE);
+    }
+  }
+
+  // ---- FRONT HALF (drawn on top, stays at y) ----
+  tft.fillCircle   (x + 14, y + 10, 7,        WHITE);
+  tft.fillRoundRect(x +  2, y +  8,  9,  7, 3, WHITE);
+  tft.drawPixel(x +  4, y + 11, BLACK);
+  tft.drawPixel(x +  6, y + 11, BLACK);
+  tft.fillRect (x +  9, y +  7, 3, 3,   BLACK);
+  tft.drawPixel(x + 10, y +  7, WHITE);
+  tft.fillTriangle(x+12,y+4, x+18,y+5, x+15,y+0, WHITE);
+  tft.drawLine (x + 14, y +  2, x + 16, y +  4, BLACK);
+  tft.drawLine (x +  6, y + 14, x +  9, y + 15, BLACK);
+  // Front 2 legs
+  int16_t flt = y + 18;
+  const int16_t flx[2] = { (int16_t)(x+16), (int16_t)(x+22) };
+  for (int i = 0; i < 2; i++) {
+    tft.drawLine(flx[i], flt,   flx[i],   flt+5, WHITE);
+    tft.drawLine(flx[i], flt+5, flx[i]+2, flt+5, WHITE);
+  }
+}
+
 static void pigAnimTickTFT() {
   // Full-layout init on page entry (checked before frame timer)
   if (pageNeedsInit[3]) {
@@ -1506,21 +1577,43 @@ static void pigAnimTickTFT() {
   }
 
   uint32_t now = millis();
-  if (now - pig.lastMs < pig.frameMs) return;
+
+  // Twerk expires after 3 s
+  if (pigTwerking_ && (now - pigTwerkMs_ >= 3000)) {
+    pigTwerking_ = false;
+    // Clear twerk area and redraw header cleanly
+    tft.fillRect(0, 21, tft.width(), tft.height() - 21, BLACK);
+    Serial.println("[PIG] Twerk complete");
+  }
+
+  uint16_t fms = pigTwerking_ ? 55 : pig.frameMs;
+  if (now - pig.lastMs < fms) return;
   pig.lastMs = now;
 
-  // Erase previous pig position (body + legs + 1px bob margin)
-  tft.fillRect(pig.x, pig.y, PIG_W, PIG_H + 3, BLACK);
-
-  // Move and bounce
-  pig.x += pig.dx;
-  int16_t maxX = tft.width() - PIG_W;
-  if (pig.x <= 0)    { pig.x = 0;    pig.dx =  1; }
-  if (pig.x >= maxX) { pig.x = maxX; pig.dx = -1; }
-  pig.phase = (pig.phase + 1) & 3;
-  int16_t bob = (pig.phase == 1 || pig.phase == 3) ? 1 : 0;
-
-  drawPigTFT(pig.x, pig.y + bob, pig.phase);
+  if (pigTwerking_) {
+    pigTwerkPhase_ = (pigTwerkPhase_ + 1) & 3;
+    // drawPigTwerkTFT handles rise internally — just erase and redraw
+    tft.fillRect(0, 21, tft.width(), tft.height() - 21, BLACK);
+    drawPigTwerkTFT(pigTwerkX_, pig.y, pigTwerkPhase_);
+    // Flash "OINK!" above the pig on odd phases
+    if (pigTwerkPhase_ & 1) {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_YELLOW, BLACK);
+      tftDrawCentered(30, "OINK!", 1);
+      tft.setTextColor(WHITE, BLACK);
+    }
+  } else {
+    // Erase previous pig position (body + legs + 1px bob margin)
+    tft.fillRect(pig.x, pig.y, PIG_W, PIG_H + 3, BLACK);
+    // Move and bounce
+    pig.x += pig.dx;
+    int16_t maxX = tft.width() - PIG_W;
+    if (pig.x <= 0)    { pig.x = 0;    pig.dx =  1; }
+    if (pig.x >= maxX) { pig.x = maxX; pig.dx = -1; }
+    pig.phase = (pig.phase + 1) & 3;
+    int16_t bob = (pig.phase == 1 || pig.phase == 3) ? 1 : 0;
+    drawPigTFT(pig.x, pig.y + bob, pig.phase);
+  }
 }
 
 // ================================================================
@@ -2973,12 +3066,16 @@ static void advancePage() {
   Serial.printf("[PAGE] -> %d\n", next);
 }
 
-// Button: short press = advance page; 2 s hold on mesh page = toggle Core / Node.
+// Button: triple-tap on pig page (3) = twerk; single press = advance page;
+//         2 s hold on mesh page (4) = toggle Core / Node.
 static void pollButton() {
   static uint32_t pressStartMs  = 0;
   static bool     pressing      = false;
   static bool     longTriggered = false;
-  static uint32_t lastReleaseMs = 0;
+  // Multi-click detection
+  static uint8_t  clickCount    = 0;
+  static uint32_t firstClickMs  = 0;
+  static const uint32_t MULTI_MS = 400;  // max gap between taps
 
   bool low = (digitalRead(PINS.btn) == LOW);
 
@@ -2988,6 +3085,7 @@ static void pollButton() {
 
   if (pressing && !longTriggered && (millis() - pressStartMs >= 2000)) {
     longTriggered = true;
+    clickCount = 0;  // cancel any pending multi-click
     if (currentPage == 4) {
       if (meshCoreActive) { exitCoreMode(); enterNodeMode(); }
       else                { exitNodeMode(); enterCoreMode(); }
@@ -2998,14 +3096,23 @@ static void pollButton() {
 
   if (!low && pressing) {
     if (!longTriggered) {
-      uint32_t now = millis();
-      if (now - lastReleaseMs >= 400) {
-        lastReleaseMs = now;
-        advancePage();
-        Serial.printf("[BTN] GPIO%d pressed\n", PINS.btn);
-      }
+      clickCount++;
+      if (clickCount == 1) firstClickMs = millis();
     }
     pressing = false;
+  }
+
+  // Evaluate click count after multi-tap window expires
+  if (clickCount > 0 && (millis() - firstClickMs) > MULTI_MS) {
+    if (clickCount >= 2 && currentPage == 3) {
+      // Double-tap on pig page -> TWERK
+      pigTwerkStartTFT();
+    } else {
+      // Single (or unrecognised multi) press -> advance page
+      advancePage();
+      Serial.printf("[BTN] GPIO%d pressed (clicks=%d)\n", PINS.btn, clickCount);
+    }
+    clickCount = 0;
   }
 }
 
