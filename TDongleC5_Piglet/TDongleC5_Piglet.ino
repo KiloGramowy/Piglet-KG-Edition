@@ -1853,6 +1853,9 @@ static void jcmkOnRecv(const esp_now_recv_info_t* info,
 
   if (meshCoreActive) {
     if (type == JCMK_MSG_CORE_REQUEST) {
+      Serial.printf("[CORE] RX CORE_REQUEST from %02X:%02X:%02X:%02X:%02X:%02X len=%d\n",
+        info->src_addr[0],info->src_addr[1],info->src_addr[2],
+        info->src_addr[3],info->src_addr[4],info->src_addr[5], len);
       coreSendReply(info->src_addr);
       uint8_t next = (coreReqTail + 1) % CORE_REQ_QUEUE;
       if (next != coreReqHead) {
@@ -2032,14 +2035,24 @@ static void enterCoreMode() {
   // Mesh mode owns the WiFi stack — prevent stopAPIfAllowed() from firing
   // WiFi.disconnect(true,true) after esp_now_init() would kill the ESP-Now driver.
   apWindowActive = false;
-  WiFi.softAPdisconnect(true); WiFi.disconnect(true,false);
-  // Prevent STA auto-reconnect from moving the radio off ch 6 while ESP-Now runs.
+  // Full WiFi deinit → reinit: clears previous AP channel/state from driver.
+  WiFi.softAPdisconnect(true);
   WiFi.setAutoReconnect(false); WiFi.persistent(false);
-  delay(100); WiFi.mode(WIFI_STA); delay(150);
+  WiFi.mode(WIFI_OFF);  // full deinit — clears previous AP channel state
+  delay(200);
+  WiFi.mode(WIFI_STA);  // clean reinit
+  delay(200);
   esp_err_t err=esp_now_init();
   if (err!=ESP_OK) { Serial.printf("[CORE] init failed: %d\n",(int)err); return; }
   esp_now_register_recv_cb(jcmkOnRecv);
-  delay(50); jcmkSetChannel(JCMK_ESPNOW_CH); jcmkAddPeer(JCMK_BCAST);
+  delay(50); jcmkSetChannel(JCMK_ESPNOW_CH);
+  { uint8_t pri; wifi_second_chan_t sec; esp_wifi_get_channel(&pri, &sec);
+    Serial.printf("[CORE] Channel after set: %d (target=%d)%s\n", pri, JCMK_ESPNOW_CH,
+      (pri==JCMK_ESPNOW_CH)?" OK":" *** MISMATCH!");
+    if (pri!=JCMK_ESPNOW_CH){delay(50);jcmkSetChannel(JCMK_ESPNOW_CH);
+      esp_wifi_get_channel(&pri,&sec);
+      Serial.printf("[CORE] Channel after retry: %d\n",pri);} }
+  jcmkAddPeer(JCMK_BCAST);
   meshCoreActive=true;
   pageNeedsInit[4]=true;  // force TFT header redraw for Core mode
   Serial.println("[CORE] Ready — listening for nodes on ch 6");
@@ -2177,19 +2190,16 @@ static void enterNodeMode() {
   // WiFi.disconnect(true,true) after esp_now_init() would kill the ESP-Now driver.
   apWindowActive = false;
 
-  // Soft WiFi reset — do NOT erase NVS credentials (eraseap=false)
+  // Full WiFi deinit → reinit: clears previous AP channel/state from driver.
   WiFi.softAPdisconnect(true);
-  WiFi.disconnect(true, false);
-  // Prevent STA auto-reconnect from moving the radio off ch 6 while ESP-Now runs.
   WiFi.setAutoReconnect(false);
   WiFi.persistent(false);
-  delay(100);
-  WiFi.mode(WIFI_STA);
-  delay(150);  // let the driver settle before touching the channel
+  WiFi.mode(WIFI_OFF);  // full deinit — clears previous AP channel state
+  delay(200);
+  WiFi.mode(WIFI_STA);  // clean reinit
+  delay(200);
 
   // Init ESP-Now FIRST, then lock the home channel.
-  // Calling setChannel before esp_now_init() risks the driver
-  // resetting the channel back during its own initialisation.
   esp_err_t err = esp_now_init();
   if (err != ESP_OK) {
     Serial.printf("[MESH] esp_now_init failed: %d\n", (int)err);
@@ -2197,9 +2207,14 @@ static void enterNodeMode() {
   }
   esp_now_register_recv_cb(jcmkOnRecv);
 
-  // Lock radio to JCMK ESP-Now home channel AFTER init (matches JCMK pattern)
   delay(50);
   jcmkSetChannel(JCMK_ESPNOW_CH);
+  { uint8_t pri; wifi_second_chan_t sec; esp_wifi_get_channel(&pri, &sec);
+    Serial.printf("[MESH] Channel after set: %d (target=%d)%s\n", pri, JCMK_ESPNOW_CH,
+      (pri==JCMK_ESPNOW_CH)?" OK":" *** MISMATCH!");
+    if (pri!=JCMK_ESPNOW_CH){delay(50);jcmkSetChannel(JCMK_ESPNOW_CH);
+      esp_wifi_get_channel(&pri,&sec);
+      Serial.printf("[MESH] Channel after retry: %d\n",pri);} }
 
   jcmkAddPeer(JCMK_BCAST);
 
