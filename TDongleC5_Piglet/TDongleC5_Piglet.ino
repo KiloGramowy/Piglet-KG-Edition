@@ -137,6 +137,8 @@ struct Config {
   String deviceName;
   // Auto-start mesh role on boot: "core" | "node" | "none"
   String meshModeOnBoot = "none";
+  // Rotate TFT screen 180° (true = upside-down mount). Requires reboot.
+  bool rotateScreen180 = false;
 };
 
 Config cfg;
@@ -369,6 +371,7 @@ static void cfgAssignKV(const String& k, const String& v) {
   else if (k == "maxBootUploads") { int n = v.toInt(); if (n >= -1) cfg.maxBootUploads = n; }
   else if (k == "deviceName")      cfg.deviceName = v;
   else if (k == "meshModeOnBoot") { String vv = v; vv.toLowerCase(); if (vv == "core" || vv == "node" || vv == "none") cfg.meshModeOnBoot = vv; }
+  else if (k == "rotateScreen180") { String vv = v; vv.toLowerCase(); cfg.rotateScreen180 = (vv == "true" || vv == "1"); }
 }
 
 static bool saveConfigToSD() {
@@ -395,6 +398,8 @@ static bool saveConfigToSD() {
   f.print("deviceName=");      f.println(cfg.deviceName);
   f.println("# Mesh mode on boot: core | node | none");
   f.print("meshModeOnBoot=");  f.println(cfg.meshModeOnBoot);
+  f.println("# Rotate screen 180 degrees (true = upside-down mount). Requires reboot.");
+  f.print("rotateScreen180="); f.println(cfg.rotateScreen180 ? "true" : "false");
 
   f.flush(); f.close();
   Serial.println("[CFG] Saved OK");
@@ -2491,6 +2496,7 @@ static void handleStatus() {
   c["maxBootUploads"] = cfg.maxBootUploads;
   c["deviceName"]     = cfg.deviceName;
   c["meshModeOnBoot"] = cfg.meshModeOnBoot;
+  c["rotateScreen180"] = cfg.rotateScreen180;
 
   String out; serializeJson(doc, out);
   server.send(200, "application/json", out);
@@ -3174,7 +3180,7 @@ void setup() {
   tft.initR(INITR_MINI160x80);
   tft.invertDisplay(true);          // ST7735S panel powers up in inverted mode
   tft.setColRowStartPublic(26, 1);  // ST7735S panel window: col offset 26, row offset 1
-  tft.setRotation(0);  // Portrait 80x160
+  tft.setRotation(cfg.rotateScreen180 ? 2 : 0);  // Portrait (0=normal, 2=180° flip)
   tft.fillScreen(BLACK);
   tft.setTextColor(WHITE, BLACK);
   // Backlight: active-LOW (P-ch MOSFET gate)

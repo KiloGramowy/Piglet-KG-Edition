@@ -123,6 +123,10 @@ void cfgAssignKV(const String& k, const String& v) {
     String vv = v; vv.toLowerCase();
     if (vv == "core" || vv == "node" || vv == "none") cfg.meshModeOnBoot = vv;
   }
+  else if (k == "rotateScreen180") {
+    String vv = v; vv.toLowerCase();
+    cfg.rotateScreen180 = (vv == "true" || vv == "1");
+  }
 }
 
 // ---------------- Load / Save ----------------
@@ -279,6 +283,10 @@ bool saveConfigToSD() {
   f.println("# Node  — become a scanning mesh node after uploads complete.");
   f.println("# None  — normal solo wardriving (default).");
   f.print("meshModeOnBoot="); f.println(cfg.meshModeOnBoot);
+
+  f.println("");
+  f.println("# Rotate screen 180 degrees (true = upside-down mount). Requires reboot.");
+  f.print("rotateScreen180="); f.println(cfg.rotateScreen180 ? "true" : "false");
 
   f.flush();
   f.close();

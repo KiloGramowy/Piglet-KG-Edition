@@ -38,6 +38,10 @@ struct Config {
   // node — become a scanning node that forwards records to the Core.
   // none — normal solo wardriving mode.
   String meshModeOnBoot = "none";
+
+  // Rotate the OLED display 180° (true = upside-down mount, false = normal).
+  // Requires reboot to take effect.
+  bool rotateScreen180 = false;
 };
 
 const PinMap& detectPinsByChip();

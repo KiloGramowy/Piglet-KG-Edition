@@ -354,6 +354,7 @@ void setup() {
 
   if (lcdOk) {
     Serial.println("[LCD] SSD1306 init OK");
+    display.setRotation(cfg.rotateScreen180 ? 2 : 0);
     showSplashScreen();
   } else {
     Serial.println("[LCD] SSD1306 init FAIL at 0x3C and 0x3D");

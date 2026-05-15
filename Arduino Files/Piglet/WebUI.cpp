@@ -380,6 +380,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <option value="core">Core &mdash; Mesh Coordinator</option>
         </select>
       </div>
+      <div><label>Rotate Screen 180&deg; (requires reboot)</label>
+        <select id="rotateScreen180">
+          <option value="false">Normal</option>
+          <option value="true">Rotated 180&deg;</option>
+        </select>
+      </div>
     </div>
     <div class="row mt-md">
       <button class="btn-primary" onclick="saveCfg()">Save Config</button>
@@ -494,7 +500,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -575,7 +581,7 @@ async function deleteAllLogs(){
 
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -835,6 +841,7 @@ static void handleStatus() {
   c["maxBootUploads"] = cfg.maxBootUploads;
   c["deviceName"]     = cfg.deviceName;
   c["meshModeOnBoot"] = cfg.meshModeOnBoot;
+  c["rotateScreen180"] = cfg.rotateScreen180;
 
   String output;
   serializeJson(doc, output);
