@@ -139,9 +139,9 @@ static void ledTick() {
 // ================================================================
 static void setChannel(uint8_t ch) {
   esp_wifi_set_ps(WIFI_PS_NONE);
-  esp_wifi_set_promiscuous(true);
+  // Do NOT use promiscuous mode: on IDF 5.x, disabling promiscuous after
+  // a prior STA connection causes the driver to revert to the home router channel.
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_set_promiscuous(false);
 }
 
 static void addPeer(const uint8_t* mac) {

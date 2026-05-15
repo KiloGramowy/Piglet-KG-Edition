@@ -142,9 +142,10 @@ static String meshAuthModeToString(wifi_auth_mode_t m) {
 // ================================================================
 static void jcmkSetChannel(uint8_t ch) {
   esp_wifi_set_ps(WIFI_PS_NONE);
-  esp_wifi_set_promiscuous(true);
+  // Do NOT use promiscuous mode here: on IDF 5.x, disabling promiscuous after
+  // a prior STA connection causes the driver to revert to the home router channel.
+  // Direct esp_wifi_set_channel() works correctly when the STA is not connected.
   esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_set_promiscuous(false);
 }
 
 static bool jcmkAddPeer(const uint8_t* mac) {
