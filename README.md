@@ -29,6 +29,8 @@ Designed for **[Seeed XIAO ESP32-S3](https://wiki.seeedstudio.com/xiao_esp32s3_g
 - Optimized for mobile wardriving or warWalking!
 - **ESP-Now Mesh Node mode** — pair with a coordinator device for multi-node wardriving
 - **Mesh auto-start on boot** — configure `meshModeOnBoot` to automatically enter Core or Node mode after uploads complete, bypassing the AP window
+- **Screen rotation** — mount the display upside-down and set `rotateScreen180=true` to flip 180°
+- **PigletNode** — standalone minimal firmware for XIAO ESP32-C5 that boots directly as a mesh node (no display, GPS, or SD required)
 
 
 ## ESP-Now Mesh Network Node Mode
@@ -72,6 +74,21 @@ Set `meshModeOnBoot` in `/wardriver.cfg` to automatically enter mesh mode after 
 When `core` or `node` is set the SoftAP window is **skipped entirely** (ESP-Now owns the WiFi stack and the AP would be non-functional). The device goes straight from boot uploads to the mesh page. Set via the web UI **Mesh Mode On Boot** dropdown or directly in `/wardriver.cfg`.
 
 
+## PigletNode — Standalone Mesh Node
+
+A minimal, standalone firmware for the **Seeed XIAO ESP32-C5** in the `PigletNode/` folder. No display, GPS, or SD card required — flash it and it automatically pairs with any Piglet running in Core mode and begins scanning.
+
+- Single-file Arduino sketch, zero external library dependencies
+- Boots directly into JCMK-compatible ESP-Now node mode
+- Dual-band scanning: 40 channels (2.4 GHz ch 1–14 + 5 GHz UNII-1/2/2e/3)
+- Auto-pairs with Piglet Core mode (XIAO or T-Dongle)
+- 30-second Core timeout with automatic re-search
+- LED: fast blink = searching, slow blink = paired and scanning
+- Hold BOOT button > 2 s to force a re-search
+
+**Flash:** Open `PigletNode/PigletNode.ino` in Arduino IDE, select **XIAO_ESP32C5**, upload. No libraries to install.
+
+
 ## T-Dongle C5 Variant
 
 A standalone firmware port is available for the **LilyGo T-Dongle C5** in the `TDongleC5_Piglet/` folder. This variant is a self-contained single-file sketch with its own display driver, LED control, and web UI — no external OLED required.
@@ -106,7 +123,8 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are included in the ESP32 
 - [Seeed XIAO ESP32-S3](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html)  
 - [Seeed XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html) *(required for 5 GHz scanning)*  
 - [Seeed XIAO ESP32-C6](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C6-p-5884.html)  
-- LilyGo T-Dongle C5 *(standalone variant — see above)*  
+- LilyGo T-Dongle C5 *(standalone variant — see above)*
+- Seeed XIAO ESP32-C5 *(PigletNode — mesh node only, see above)*  
 
 ### Required Peripherals
 
@@ -329,6 +347,15 @@ batteryTest=false
 # when using node mode.
 
 meshModeOnBoot=none
+
+# ------------------------------------------------------------
+# Screen Rotation
+# ------------------------------------------------------------
+# Rotate the display 180 degrees for upside-down mounting.
+# Values: true or false
+# Reboot required after changing.
+
+rotateScreen180=false
 ```
 
 
