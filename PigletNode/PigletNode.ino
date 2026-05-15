@@ -462,11 +462,15 @@ void setup() {
   // Button
   pinMode(BTN_PIN, INPUT_PULLUP);
 
-  // WiFi: STA mode, no home SSID, no auto-reconnect
-  WiFi.mode(WIFI_STA);
+  // WiFi: full deinit → clean STA reinit.
+  // WiFi.disconnect(wifioff=true) only calls esp_wifi_stop(), leaving the
+  // radio in a stopped state so setChannel() silently fails afterwards.
+  // WiFi.mode(WIFI_OFF) calls esp_wifi_deinit() for a true clean slate.
+  WiFi.mode(WIFI_OFF);   // full deinit
+  delay(100);
+  WiFi.mode(WIFI_STA);   // clean reinit — radio is now running
   WiFi.setAutoReconnect(false);
   WiFi.persistent(false);
-  WiFi.disconnect(true, false);
   delay(100);
 
   // Init ESP-Now
@@ -484,6 +488,14 @@ void setup() {
   // Lock radio to JCMK home channel AFTER init
   delay(50);
   setChannel(ESPNOW_CH);
+  // Verify channel stuck (helps diagnose if radio wasn't running)
+  { uint8_t pri; wifi_second_chan_t sec; esp_wifi_get_channel(&pri, &sec);
+    Serial.printf("[NODE] Channel after set: %d (target=%d)%s\n", pri, ESPNOW_CH,
+      (pri == ESPNOW_CH) ? " OK" : " *** MISMATCH!");
+    if (pri != ESPNOW_CH) { delay(50); setChannel(ESPNOW_CH);
+      esp_wifi_get_channel(&pri, &sec);
+      Serial.printf("[NODE] Channel after retry: %d\n", pri); }
+  }
   addPeer(JCMK_BCAST);
 
   // Random stagger (200-3000 ms) so multiple nodes don't flood the Core together
