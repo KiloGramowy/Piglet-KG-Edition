@@ -577,17 +577,17 @@ void enterNodeMode() {
   // WiFi.disconnect(true,true) after esp_now_init() would kill the ESP-Now driver.
   apWindowActive = false;
 
-  // Soft WiFi reset — do NOT erase NVS credentials (eraseap=false)
+  // Full WiFi deinit → reinit: clears previous AP channel/state from driver.
+  // WiFi.disconnect(wifioff=true) only calls esp_wifi_stop() — it leaves the
+  // driver in a tainted state that breaks ESP-Now receive on the next start.
+  // WiFi.mode(WIFI_OFF) calls esp_wifi_deinit() for a true clean slate.
   WiFi.softAPdisconnect(true);
-  WiFi.disconnect(true, false);
-  // Prevent STA auto-reconnect from moving the radio off ch 6 while ESP-Now runs.
-  // A background reconnect to the home AP changes the radio channel and silently
-  // kills ESP-Now receive (Core stops seeing node heartbeats → 20 s timeout).
   WiFi.setAutoReconnect(false);
   WiFi.persistent(false);
-  delay(100);
-  WiFi.mode(WIFI_STA);
-  delay(150);  // let the driver settle before touching the channel
+  WiFi.mode(WIFI_OFF);  // full deinit — clears previous AP channel state
+  delay(200);
+  WiFi.mode(WIFI_STA);  // clean reinit
+  delay(200);
 
   // Init ESP-Now FIRST, then lock the home channel.
   // Calling setChannel before esp_now_init() risks the driver
@@ -661,14 +661,14 @@ void enterCoreMode() {
   // WiFi.disconnect(true,true) after esp_now_init() would kill the ESP-Now driver.
   apWindowActive = false;
 
+  // Full WiFi deinit → reinit: clears previous AP channel/state from driver.
   WiFi.softAPdisconnect(true);
-  WiFi.disconnect(true, false);
-  // Prevent STA auto-reconnect from moving the radio off ch 6 while ESP-Now runs.
   WiFi.setAutoReconnect(false);
   WiFi.persistent(false);
-  delay(100);
-  WiFi.mode(WIFI_STA);
-  delay(150);
+  WiFi.mode(WIFI_OFF);  // full deinit — clears previous AP channel state
+  delay(200);
+  WiFi.mode(WIFI_STA);  // clean reinit
+  delay(200);
 
   esp_err_t err = esp_now_init();
   if (err != ESP_OK) {
