@@ -94,7 +94,7 @@ static bool     nodeActive    = false;
 static bool     haveCore      = false;
 static uint8_t  coreMac[6]   = {0};
 static uint8_t  startIdx      = 0;
-static uint8_t  endIdx        = 0;
+static uint8_t  endIdx        = NUM_CHANNELS - 1;  // default = all channels
 static uint8_t  assignVer     = 0;
 static uint32_t netFound      = 0;
 static uint32_t netSent       = 0;
@@ -206,14 +206,60 @@ static void onRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len
   if (type == MSG_CORE_REPLY && !haveCore && !coreFoundPending) {
     memcpy(coreMacPending, info->src_addr, 6);
     coreFoundPending = true;
+
   } else if (type == MSG_ADMIN && len >= (int)sizeof(jcmk_admin_msg_t)) {
+    // ---- JCMK binary admin (Piglet Core, JCMK Core) ----
+    // Layout: magic[4], type, assignment_version, node_index, node_count,
+    //         start_channel_idx, end_channel_idx
+    // Only update if the assignment version has advanced (prevents stale replays).
     const jcmk_admin_msg_t* adm = (const jcmk_admin_msg_t*)data;
     if (adm->assignment_version != assignVer) {
       assignVer = adm->assignment_version;
       startIdx  = adm->start_channel_idx;
       endIdx    = adm->end_channel_idx;
     }
-    lastAdminMs = millis();  // heartbeat from Core — reset timeout
+    lastAdminMs = millis();
+
+  } else if (type == 10 && len >= 11) {
+    // ---- Biscuit MSG_CONFIG_UPDATE (type 10) ----
+    // Payload: jcmk_text_msg_t with text = "channels=1,2,...;dwell=N"
+    // Parse the channel list and map actual channel numbers back to CHANNELS[] indices.
+    const jcmk_text_msg_t* tm = (const jcmk_text_msg_t*)data;
+    uint16_t slen = (tm->len < JCMK_TEXT_MAX) ? tm->len : JCMK_TEXT_MAX;
+    char buf[JCMK_TEXT_MAX + 1];
+    memcpy(buf, tm->text, slen);
+    buf[slen] = '\0';
+
+    // Find "channels=" prefix
+    const char* chStart = strstr(buf, "channels=");
+    if (chStart) {
+      chStart += 9;  // skip "channels="
+      uint8_t first = 0xFF, last = 0xFF;
+      const char* p = chStart;
+      while (*p && *p != ';') {
+        int ch = atoi(p);
+        // Find index of this channel number in CHANNELS[]
+        for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
+          if (CHANNELS[i] == (uint8_t)ch) {
+            if (first == 0xFF) first = i;
+            last = i;
+            break;
+          }
+        }
+        // Advance past this number
+        while (*p && *p != ',' && *p != ';') p++;
+        if (*p == ',') p++;
+      }
+      if (first != 0xFF) {
+        startIdx  = first;
+        endIdx    = last;
+        assignVer = (assignVer == 255) ? 1 : assignVer + 1;  // mark as assigned
+        Serial.printf("[NODE] Biscuit config: ch %d-%d (idx %d-%d)\n",
+          CHANNELS[startIdx], CHANNELS[endIdx], startIdx, endIdx);
+      }
+    }
+    lastAdminMs = millis();
+
   } else if (type == MSG_HEARTBEAT && haveCore) {
     // Core is still alive — reset timeout
     lastAdminMs = millis();
@@ -227,7 +273,7 @@ static void resetToSearching() {
   haveCore     = false;
   assignVer    = 0;
   startIdx     = 0;
-  endIdx       = NUM_CHANNELS - 1;
+  endIdx       = NUM_CHANNELS - 1;  // default = all channels until Core assigns a range
   hbCounter    = 0;
   lastHbMs     = 0;
   lastReqMs    = 0;
