@@ -1933,6 +1933,8 @@ static void coreFindOrAddNode(const uint8_t* mac, bool isBiscuit) {
       coreNodes[i].recordsRx = 0; coreNodes[i].isBiscuit = isBiscuit;
       memcpy(coreNodes[i].mac, mac, 6);
       coreNodeCount++; jcmkAddPeer(mac);
+      // Re-send CORE_REPLY now that the peer is registered.
+      coreSendReply(mac);
       Serial.printf("[CORE] New %s node %d: %02X:%02X:%02X:%02X:%02X:%02X\n",
         isBiscuit ? "Biscuit" : "JCMK",
         i, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
