@@ -262,7 +262,10 @@ static void jcmkOnRecv(const esp_now_recv_info_t* info,
 
   if (meshCoreActive) {
     // ---- Core role: handle requests from nodes ----
-    if (type == JCMK_MSG_CORE_REQUEST) {
+  if (type == JCMK_MSG_CORE_REQUEST) {
+      Serial.printf("[CORE] RX CORE_REQUEST from %02X:%02X:%02X:%02X:%02X:%02X len=%d\n",
+        info->src_addr[0],info->src_addr[1],info->src_addr[2],
+        info->src_addr[3],info->src_addr[4],info->src_addr[5], len);
       coreSendReply(info->src_addr);  // reply immediately (safe from callback)
       uint8_t next = (coreReqTail + 1) % CORE_REQ_QUEUE;
       if (next != coreReqHead) {
@@ -599,6 +602,14 @@ void enterNodeMode() {
   // Lock radio to JCMK ESP-Now home channel AFTER init (matches JCMK pattern)
   delay(50);
   jcmkSetChannel(JCMK_ESPNOW_CH);
+  // Verify the channel actually stuck
+  { uint8_t pri; wifi_second_chan_t sec; esp_wifi_get_channel(&pri, &sec);
+    Serial.printf("[MESH] Channel after set: %d (target=%d)%s\n", pri, JCMK_ESPNOW_CH,
+      (pri == JCMK_ESPNOW_CH) ? " OK" : " *** MISMATCH — trying again");
+    if (pri != JCMK_ESPNOW_CH) { delay(50); jcmkSetChannel(JCMK_ESPNOW_CH);
+      esp_wifi_get_channel(&pri, &sec);
+      Serial.printf("[MESH] Channel after retry: %d\n", pri); }
+  }
 
   jcmkAddPeer(JCMK_BCAST);
 
@@ -667,6 +678,14 @@ void enterCoreMode() {
   esp_now_register_recv_cb(jcmkOnRecv);
   delay(50);
   jcmkSetChannel(JCMK_ESPNOW_CH);
+  // Verify the channel actually stuck
+  { uint8_t pri; wifi_second_chan_t sec; esp_wifi_get_channel(&pri, &sec);
+    Serial.printf("[CORE] Channel after set: %d (target=%d)%s\n", pri, JCMK_ESPNOW_CH,
+      (pri == JCMK_ESPNOW_CH) ? " OK" : " *** MISMATCH — trying again");
+    if (pri != JCMK_ESPNOW_CH) { delay(50); jcmkSetChannel(JCMK_ESPNOW_CH);
+      esp_wifi_get_channel(&pri, &sec);
+      Serial.printf("[CORE] Channel after retry: %d\n", pri); }
+  }
   jcmkAddPeer(JCMK_BCAST);
 
   meshCoreActive = true;
