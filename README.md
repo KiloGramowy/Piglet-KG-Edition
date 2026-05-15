@@ -124,7 +124,7 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are included in the ESP32 
 - [Seeed XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html) *(required for 5 GHz scanning)*  
 - [Seeed XIAO ESP32-C6](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C6-p-5884.html)  
 - LilyGo T-Dongle C5 *(standalone variant — see above)*
-- Seeed XIAO ESP32-C5 *(PigletNode — mesh node only, see above)*  
+- [Seeed XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html)  *(PigletNode — mesh node only, see above)*  
 
 ### Required Peripherals
 
