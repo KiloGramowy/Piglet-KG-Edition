@@ -40,7 +40,7 @@
 #include "esp_wifi.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.5"
+#define FIRMWARE_VERSION "v2.51"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
