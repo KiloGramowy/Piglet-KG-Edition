@@ -3384,7 +3384,9 @@ void loop() {
   // LED tick (non-blocking pulse)
   ledTick();
 
-  handleStaTransitions();
+  // Skip STA transition handler in mesh mode — it calls WiFi.disconnect(wifioff=true)
+  // which stops the WiFi driver and deinits ESP-Now.
+  if (!meshNodeActive && !meshCoreActive) handleStaTransitions();
 
   // Scanning — mesh page handles its own logic; skip normal scan path
   if (currentPage == 4) {

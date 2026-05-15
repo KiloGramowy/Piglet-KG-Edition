@@ -572,7 +572,9 @@ void loop() {
     updateOLED(speedDisplay);  // also dispatches page 5 (mesh node)
   }
 
-  handleStaTransitions();
+  // Skip STA transition handler in mesh mode — it calls WiFi.disconnect(wifioff=true)
+  // which stops the WiFi driver and deinits ESP-Now.
+  if (!meshNodeActive && !meshCoreActive) handleStaTransitions();
 
   // Scanning – page-aware logic
   // Mesh node page handles its own scan via nodeModeTick(); skip normal path.
