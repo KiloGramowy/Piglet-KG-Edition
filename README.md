@@ -446,6 +446,14 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are built into the ESP32 c
 6. Add `/wardriver.cfg` to SD card root with your WiGLE API key and WiFi credentials
 7. Restart device with RST button or power cycle
 
+### Where to Order
+
+I always order everything from JLCPCB because i get the best deals.  However i do understand that people prefer the all in one project offers of PCBway so i have created this project here:
+
+[PCBWayProjects](https://www.pcbway.com/project/shareproject/Piglet_Opensource_Wardriving_Project_1a21b94b.html)
+
+
+
 ## License
 
 Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0)
