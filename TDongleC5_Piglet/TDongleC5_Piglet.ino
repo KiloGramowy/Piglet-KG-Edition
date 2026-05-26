@@ -1543,51 +1543,58 @@ static uint32_t sqMs_      = 0;
 static uint8_t  sqPhase_   = 0;
 
 static void drawSasquatchTFT(int16_t x, int16_t y, uint8_t phase) {
-  // Patterson-Gimlin style: forward-leaning torso, conical head, long arms, big feet.
-  // Head (cone shape, no neck, leaning forward)
-  tft.fillTriangle(x + 15, y, x + 12, y + 6, x + 19, y + 6, WHITE);
-  tft.fillRect(x + 13, y + 4, 6, 3, WHITE);
-  // Brow ridge
-  tft.drawFastHLine(x + 13, y + 3, 5, WHITE);
-  // Torso (wide, hunched forward)
-  tft.fillRoundRect(x + 8, y + 7, 12, 14, 3, WHITE);
-  // Chest bulk
-  tft.fillRect(x + 7, y + 8, 3, 8, WHITE);
-  // Shoulder hump
-  tft.fillRect(x + 10, y + 5, 8, 4, WHITE);
-  // Arms (long, ape-like, swing with walk)
+  // Classic frame 352 pose: mid-stride, upright, head turned back over right shoulder.
   bool swing = (phase & 1);
+  // --- Head (turned back, flat-top sagittal crest) ---
+  tft.fillRoundRect(x + 14, y, 7, 7, 2, WHITE);
+  tft.fillRect(x + 14, y, 7, 3, WHITE);
+  tft.fillRect(x + 13, y + 3, 2, 4, WHITE);
+  // --- Neck ---
+  tft.fillRect(x + 14, y + 6, 5, 3, WHITE);
+  // --- Torso ---
+  tft.fillRoundRect(x + 10, y + 8, 10, 14, 3, WHITE);
+  tft.fillRect(x + 9, y + 9, 3, 10, WHITE);
+  tft.fillRect(x + 19, y + 9, 2, 8, WHITE);
+  // --- Shoulder hump ---
+  tft.fillRect(x + 12, y + 7, 8, 3, WHITE);
+  // --- Arms ---
   if (swing) {
-    tft.drawLine(x + 8, y + 10, x + 4, y + 22, WHITE);
-    tft.drawLine(x + 8, y + 11, x + 5, y + 22, WHITE);
-    tft.drawLine(x + 19, y + 10, x + 22, y + 18, WHITE);
-    tft.drawLine(x + 19, y + 11, x + 23, y + 18, WHITE);
+    tft.drawLine(x + 10, y + 11, x + 6, y + 22, WHITE);
+    tft.drawLine(x + 10, y + 12, x + 7, y + 22, WHITE);
+    tft.drawLine(x + 11, y + 12, x + 7, y + 23, WHITE);
+    tft.drawLine(x + 19, y + 11, x + 23, y + 20, WHITE);
+    tft.drawLine(x + 19, y + 12, x + 24, y + 20, WHITE);
   } else {
-    tft.drawLine(x + 8, y + 10, x + 5, y + 18, WHITE);
-    tft.drawLine(x + 8, y + 11, x + 6, y + 18, WHITE);
-    tft.drawLine(x + 19, y + 10, x + 23, y + 22, WHITE);
+    tft.drawLine(x + 10, y + 11, x + 7, y + 20, WHITE);
+    tft.drawLine(x + 10, y + 12, x + 8, y + 20, WHITE);
     tft.drawLine(x + 19, y + 11, x + 22, y + 22, WHITE);
+    tft.drawLine(x + 19, y + 12, x + 23, y + 22, WHITE);
+    tft.drawLine(x + 20, y + 12, x + 23, y + 23, WHITE);
   }
-  // Legs (thick, bent at knee) + oversized feet
-  int16_t hip = y + 20;
+  // --- Legs ---
+  int16_t hip = y + 21;
   if (swing) {
-    tft.fillRect(x + 8, hip, 3, 6, WHITE);
-    tft.drawLine(x + 8, hip + 6, x + 5, hip + 10, WHITE);
-    tft.drawLine(x + 9, hip + 6, x + 6, hip + 10, WHITE);
-    tft.fillRect(x + 3, hip + 10, 5, 2, WHITE);
-    tft.fillRect(x + 14, hip, 3, 5, WHITE);
-    tft.drawLine(x + 14, hip + 5, x + 17, hip + 10, WHITE);
-    tft.drawLine(x + 15, hip + 5, x + 18, hip + 10, WHITE);
-    tft.fillRect(x + 16, hip + 10, 6, 2, WHITE);
+    tft.fillRect(x + 11, hip, 4, 4, WHITE);
+    tft.fillRect(x + 13, hip + 4, 3, 4, WHITE);
+    tft.fillRect(x + 14, hip + 8, 3, 2, WHITE);
+    tft.fillRect(x + 13, hip + 10, 6, 2, WHITE);
+    tft.fillRect(x + 14, hip, 4, 5, WHITE);
+    tft.drawLine(x + 14, hip + 5, x + 10, hip + 9, WHITE);
+    tft.drawLine(x + 15, hip + 5, x + 11, hip + 9, WHITE);
+    tft.drawLine(x + 16, hip + 5, x + 12, hip + 9, WHITE);
+    tft.fillRect(x + 7, hip + 9, 6, 2, WHITE);
+    tft.fillRect(x + 6, hip + 10, 3, 2, WHITE);
   } else {
-    tft.fillRect(x + 9, hip, 3, 5, WHITE);
-    tft.drawLine(x + 9, hip + 5, x + 12, hip + 10, WHITE);
-    tft.drawLine(x + 10, hip + 5, x + 13, hip + 10, WHITE);
-    tft.fillRect(x + 11, hip + 10, 6, 2, WHITE);
-    tft.fillRect(x + 14, hip, 3, 6, WHITE);
-    tft.drawLine(x + 14, hip + 6, x + 11, hip + 10, WHITE);
-    tft.drawLine(x + 15, hip + 6, x + 12, hip + 10, WHITE);
-    tft.fillRect(x + 9, hip + 10, 5, 2, WHITE);
+    tft.fillRect(x + 11, hip, 4, 5, WHITE);
+    tft.drawLine(x + 11, hip + 5, x + 8, hip + 9, WHITE);
+    tft.drawLine(x + 12, hip + 5, x + 9, hip + 9, WHITE);
+    tft.drawLine(x + 13, hip + 5, x + 10, hip + 9, WHITE);
+    tft.fillRect(x + 5, hip + 9, 6, 2, WHITE);
+    tft.fillRect(x + 4, hip + 10, 3, 2, WHITE);
+    tft.fillRect(x + 14, hip, 4, 4, WHITE);
+    tft.fillRect(x + 16, hip + 4, 3, 4, WHITE);
+    tft.fillRect(x + 17, hip + 8, 3, 2, WHITE);
+    tft.fillRect(x + 16, hip + 10, 6, 2, WHITE);
   }
 }
 

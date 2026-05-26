@@ -303,57 +303,67 @@ static uint32_t sqMs_      = 0;
 static uint8_t  sqPhase_   = 0;
 
 static void drawSasquatch(int16_t x, int16_t y, uint8_t phase) {
-  // Patterson-Gimlin style: forward-leaning torso, conical head, long arms, big feet.
-  // Bounding box ~24w x 34h. Facing right.
-  // Head (cone shape, no neck, leaning forward)
-  display.fillTriangle(x + 15, y, x + 12, y + 6, x + 19, y + 6, SSD1306_WHITE);
-  display.fillRect(x + 13, y + 4, 6, 3, SSD1306_WHITE);
-  // Brow ridge
-  display.drawFastHLine(x + 13, y + 3, 5, SSD1306_WHITE);
-  // Torso (wide, hunched forward)
-  display.fillRoundRect(x + 8, y + 7, 12, 14, 3, SSD1306_WHITE);
-  // Chest bulk
-  display.fillRect(x + 7, y + 8, 3, 8, SSD1306_WHITE);
-  // Shoulder hump
-  display.fillRect(x + 10, y + 5, 8, 4, SSD1306_WHITE);
-  // Arms (long, ape-like, swing with walk)
+  // Classic frame 352 pose: mid-stride, upright, head turned back over right shoulder.
+  // Solid filled silhouette ~26w x 34h, facing right.
   bool swing = (phase & 1);
+  // --- Head (turned back, flat-top sagittal crest) ---
+  display.fillRoundRect(x + 14, y, 7, 7, 2, SSD1306_WHITE);
+  display.fillRect(x + 14, y, 7, 3, SSD1306_WHITE);  // flat top
+  display.fillRect(x + 13, y + 3, 2, 4, SSD1306_WHITE);  // jaw/muzzle
+  // --- Neck (thick, sloped) ---
+  display.fillRect(x + 14, y + 6, 5, 3, SSD1306_WHITE);
+  // --- Torso (broad, slightly forward lean) ---
+  display.fillRoundRect(x + 10, y + 8, 10, 14, 3, SSD1306_WHITE);
+  display.fillRect(x + 9, y + 9, 3, 10, SSD1306_WHITE);  // front bulk
+  display.fillRect(x + 19, y + 9, 2, 8, SSD1306_WHITE);  // back bulk
+  // --- Shoulder / trapezius hump ---
+  display.fillRect(x + 12, y + 7, 8, 3, SSD1306_WHITE);
+  // --- Arms (long, past the knee, thick) ---
   if (swing) {
-    // Left arm back, right arm forward
-    display.drawLine(x + 8, y + 10, x + 4, y + 22, SSD1306_WHITE);
-    display.drawLine(x + 8, y + 11, x + 5, y + 22, SSD1306_WHITE);
-    display.drawLine(x + 19, y + 10, x + 22, y + 18, SSD1306_WHITE);
-    display.drawLine(x + 19, y + 11, x + 23, y + 18, SSD1306_WHITE);
+    // front arm forward
+    display.drawLine(x + 10, y + 11, x + 6, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 10, y + 12, x + 7, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 11, y + 12, x + 7, y + 23, SSD1306_WHITE);
+    // rear arm back
+    display.drawLine(x + 19, y + 11, x + 23, y + 20, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 12, x + 24, y + 20, SSD1306_WHITE);
   } else {
-    display.drawLine(x + 8, y + 10, x + 5, y + 18, SSD1306_WHITE);
-    display.drawLine(x + 8, y + 11, x + 6, y + 18, SSD1306_WHITE);
-    display.drawLine(x + 19, y + 10, x + 23, y + 22, SSD1306_WHITE);
+    // front arm back
+    display.drawLine(x + 10, y + 11, x + 7, y + 20, SSD1306_WHITE);
+    display.drawLine(x + 10, y + 12, x + 8, y + 20, SSD1306_WHITE);
+    // rear arm forward
     display.drawLine(x + 19, y + 11, x + 22, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 12, x + 23, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 20, y + 12, x + 23, y + 23, SSD1306_WHITE);
   }
-  // Legs (thick, bent at knee) + oversized feet
-  int16_t hip = y + 20;
+  // --- Legs (muscular thighs, bent knees, large calves) ---
+  int16_t hip = y + 21;
   if (swing) {
-    // Left leg back
-    display.fillRect(x + 8, hip, 3, 6, SSD1306_WHITE);
-    display.drawLine(x + 8, hip + 6, x + 5, hip + 10, SSD1306_WHITE);
-    display.drawLine(x + 9, hip + 6, x + 6, hip + 10, SSD1306_WHITE);
-    display.fillRect(x + 3, hip + 10, 5, 2, SSD1306_WHITE);
-    // Right leg forward
-    display.fillRect(x + 14, hip, 3, 5, SSD1306_WHITE);
-    display.drawLine(x + 14, hip + 5, x + 17, hip + 10, SSD1306_WHITE);
-    display.drawLine(x + 15, hip + 5, x + 18, hip + 10, SSD1306_WHITE);
-    display.fillRect(x + 16, hip + 10, 6, 2, SSD1306_WHITE);
+    // front leg forward stride
+    display.fillRect(x + 11, hip, 4, 4, SSD1306_WHITE);  // thigh
+    display.fillRect(x + 13, hip + 4, 3, 4, SSD1306_WHITE);  // shin
+    display.fillRect(x + 14, hip + 8, 3, 2, SSD1306_WHITE);
+    display.fillRect(x + 13, hip + 10, 6, 2, SSD1306_WHITE);  // big foot
+    // rear leg back
+    display.fillRect(x + 14, hip, 4, 5, SSD1306_WHITE);
+    display.drawLine(x + 14, hip + 5, x + 10, hip + 9, SSD1306_WHITE);
+    display.drawLine(x + 15, hip + 5, x + 11, hip + 9, SSD1306_WHITE);
+    display.drawLine(x + 16, hip + 5, x + 12, hip + 9, SSD1306_WHITE);
+    display.fillRect(x + 7, hip + 9, 6, 2, SSD1306_WHITE);
+    display.fillRect(x + 6, hip + 10, 3, 2, SSD1306_WHITE);  // heel
   } else {
-    // Left leg forward
-    display.fillRect(x + 9, hip, 3, 5, SSD1306_WHITE);
-    display.drawLine(x + 9, hip + 5, x + 12, hip + 10, SSD1306_WHITE);
-    display.drawLine(x + 10, hip + 5, x + 13, hip + 10, SSD1306_WHITE);
-    display.fillRect(x + 11, hip + 10, 6, 2, SSD1306_WHITE);
-    // Right leg back
-    display.fillRect(x + 14, hip, 3, 6, SSD1306_WHITE);
-    display.drawLine(x + 14, hip + 6, x + 11, hip + 10, SSD1306_WHITE);
-    display.drawLine(x + 15, hip + 6, x + 12, hip + 10, SSD1306_WHITE);
-    display.fillRect(x + 9, hip + 10, 5, 2, SSD1306_WHITE);
+    // front leg back
+    display.fillRect(x + 11, hip, 4, 5, SSD1306_WHITE);
+    display.drawLine(x + 11, hip + 5, x + 8, hip + 9, SSD1306_WHITE);
+    display.drawLine(x + 12, hip + 5, x + 9, hip + 9, SSD1306_WHITE);
+    display.drawLine(x + 13, hip + 5, x + 10, hip + 9, SSD1306_WHITE);
+    display.fillRect(x + 5, hip + 9, 6, 2, SSD1306_WHITE);
+    display.fillRect(x + 4, hip + 10, 3, 2, SSD1306_WHITE);
+    // rear leg forward stride
+    display.fillRect(x + 14, hip, 4, 4, SSD1306_WHITE);
+    display.fillRect(x + 16, hip + 4, 3, 4, SSD1306_WHITE);
+    display.fillRect(x + 17, hip + 8, 3, 2, SSD1306_WHITE);
+    display.fillRect(x + 16, hip + 10, 6, 2, SSD1306_WHITE);
   }
 }
 
