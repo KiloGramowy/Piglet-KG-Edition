@@ -3259,21 +3259,35 @@ void setup() {
   GPSSerial.setRxBufferSize(512);
   GPSSerial.begin(cfg.gpsBaud, SERIAL_8N1, PINS.gps_rx, PINS.gps_tx);
 
-  // WiFi setup: mesh mode skips STA entirely; normal mode tries STA and falls back to AP.
+  // WiFi setup: mesh boot with a home network connects STA first for auto-upload,
+  // then hands off to mesh. Mesh boot with no home network skips STA/AP entirely.
+  // Normal wardriving boot tries STA and falls back to AP.
   WiFi.mode(WIFI_STA);
   bool staOk = false;
   {
     String mm = cfg.meshModeOnBoot; mm.toLowerCase();
-    if (mm == "node" || mm == "core") {
-      // Dedicated mesh boot — skip STA connect and AP window entirely.
-      Serial.printf("[BOOT] meshModeOnBoot=%s — skipping STA/AP\n", cfg.meshModeOnBoot.c_str());
+    bool coreBoot    = (mm == "core");
+    bool nodeBoot    = (mm == "node");
+    bool hasHomeSsid = (cfg.homeSsid.length() > 0);
+
+    if (nodeBoot) {
+      // Node mode always skips STA/AP — go straight to mesh.
+      Serial.println("[BOOT] meshModeOnBoot=node — skipping STA/AP");
+    } else if (coreBoot && !hasHomeSsid) {
+      // Core with no home network — skip STA/AP, go straight to mesh.
+      Serial.println("[BOOT] meshModeOnBoot=core, no homeSsid — skipping STA/AP");
     } else {
-      // Normal wardriving boot: attempt STA, fall back to AP if it fails.
       staOk = connectSTA(12000);
       if (!staOk) {
         WiFi.setAutoReconnect(false); WiFi.persistent(false);
         WiFi.disconnect(true, true); delay(100);
-        startAP();
+        if (!coreBoot) {
+          // Normal wardriving: fall back to AP for web UI access.
+          startAP();
+        } else {
+          // Core boot: STA failed, skip AP — proceed to mesh mode.
+          Serial.println("[BOOT] meshModeOnBoot=core, STA failed — skipping AP");
+        }
       }
     }
   }
@@ -3333,7 +3347,9 @@ void setup() {
   }
 
   // Auto-start mesh mode if meshModeOnBoot=Core|Node.
-  // Activates unconditionally — STA was skipped above for mesh boots.
+  // Core mode: STA was used for upload above and must be torn down so
+  // ESP-Now can start cleanly on the admin channel without interference.
+  // Node mode: STA was already skipped.
   {
     String mm = cfg.meshModeOnBoot;
     mm.toLowerCase();
@@ -3343,6 +3359,15 @@ void setup() {
       pageNeedsInit[4] = true;
       enterNodeMode();
     } else if (mm == "core") {
+      // Tear down STA cleanly before entering Core — the STA connection
+      // (if any) was only needed for auto-upload and must not remain active
+      // or ESP-Now channel control will conflict with the STA home channel.
+      if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
+        Serial.println("[BOOT] Tearing down STA before Core mode");
+        WiFi.disconnect(true, true);
+        WiFi.mode(WIFI_OFF);
+        delay(150);
+      }
       Serial.println("[BOOT] meshModeOnBoot=Core — entering Mesh Core mode");
       currentPage = 4;
       enterCoreMode();
