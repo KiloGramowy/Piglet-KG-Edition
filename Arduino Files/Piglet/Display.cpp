@@ -292,8 +292,57 @@ void pigTwerkStart() {
   pigTwerking_   = true;
   pigTwerkMs_    = millis();
   pigTwerkPhase_ = 0;
-  pigTwerkX_     = pig.x;  // freeze at current position
+  pigTwerkX_     = pig.x;
   Serial.println("[PIG] TWERK ACTIVATED");
+}
+
+// ---- Sasquatch walk ----
+static bool     sqActive_  = false;
+static int16_t  sqX_       = -26;
+static uint32_t sqMs_      = 0;
+static uint8_t  sqPhase_   = 0;
+
+static void drawSasquatch(int16_t x, int16_t y, uint8_t phase) {
+  // Head
+  display.fillCircle(x + 10, y + 3, 5, SSD1306_WHITE);
+  // Body (hunched)
+  display.fillRoundRect(x + 5, y + 7, 14, 16, 5, SSD1306_WHITE);
+  // Shoulder fur
+  display.drawPixel(x + 3, y + 8, SSD1306_WHITE);
+  display.drawPixel(x + 20, y + 8, SSD1306_WHITE);
+  display.drawPixel(x + 2, y + 10, SSD1306_WHITE);
+  display.drawPixel(x + 21, y + 10, SSD1306_WHITE);
+  // Arms
+  bool swing = (phase & 1);
+  if (swing) {
+    display.drawLine(x + 5, y + 10, x + 1, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 10, x + 23, y + 18, SSD1306_WHITE);
+  } else {
+    display.drawLine(x + 5, y + 10, x + 2, y + 18, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 10, x + 22, y + 22, SSD1306_WHITE);
+  }
+  // Legs + big feet
+  int16_t lt = y + 22;
+  if (swing) {
+    display.drawLine(x + 8, lt, x + 4, lt + 8, SSD1306_WHITE);
+    display.fillRect(x + 2, lt + 8, 5, 2, SSD1306_WHITE);
+    display.drawLine(x + 15, lt, x + 19, lt + 8, SSD1306_WHITE);
+    display.fillRect(x + 18, lt + 8, 6, 2, SSD1306_WHITE);
+  } else {
+    display.drawLine(x + 8, lt, x + 12, lt + 8, SSD1306_WHITE);
+    display.fillRect(x + 11, lt + 8, 6, 2, SSD1306_WHITE);
+    display.drawLine(x + 15, lt, x + 11, lt + 8, SSD1306_WHITE);
+    display.fillRect(x + 9, lt + 8, 5, 2, SSD1306_WHITE);
+  }
+}
+
+void sasquatchStart() {
+  if (sqActive_ || pigTwerking_) return;
+  sqActive_ = true;
+  sqX_      = -26;
+  sqMs_     = millis();
+  sqPhase_  = 0;
+  Serial.println("[SQ] SIGHTING");
 }
 
 void pigAnimTick() {
@@ -303,6 +352,31 @@ void pigAnimTick() {
   if (pigTwerking_ && (now - pigTwerkMs_ >= 3000)) {
     pigTwerking_ = false;
     Serial.println("[PIG] Twerk complete");
+  }
+
+  // Sasquatch walk — runs instead of pig when active
+  if (sqActive_) {
+    if (now - sqMs_ < 80) return;
+    sqMs_ = now;
+
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(2);
+    display.setCursor(0, 0);
+    display.print("Piglet");
+    display.drawFastHLine(0, OLED_YELLOW_H - 1, OLED_W, SSD1306_WHITE);
+
+    sqX_ += 2;
+    sqPhase_ = (sqPhase_ + 1) & 3;
+    if (sqX_ < OLED_W) drawSasquatch(sqX_, 30, sqPhase_);
+    display.display();
+
+    if (sqX_ > OLED_W + 4) {
+      sqActive_ = false;
+      pig.x = 0; pig.dx = 1; pig.phase = 0;
+      Serial.println("[SQ] Gone");
+    }
+    return;
   }
 
   // Faster frame rate during twerk
@@ -319,16 +393,13 @@ void pigAnimTick() {
 
   if (pigTwerking_) {
     pigTwerkPhase_ = (pigTwerkPhase_ + 1) & 3;
-    // drawPigTwerk handles all y-offsets internally via the 'rise' per phase
     drawPigTwerk(pigTwerkX_, pig.y, pigTwerkPhase_);
-    // Flash "OINK!" above the pig on odd phases
     if (pigTwerkPhase_ & 1) {
       display.setTextSize(1);
       display.setCursor(74, OLED_YELLOW_H + 2);
       display.print("OINK!");
     }
   } else {
-    // Normal walk
     pig.x += pig.dx;
     if (pig.x <= 0)              { pig.x = 0;              pig.dx =  1; }
     if (pig.x >= (128 - PIG_W))  { pig.x = 128 - PIG_W;    pig.dx = -1; }

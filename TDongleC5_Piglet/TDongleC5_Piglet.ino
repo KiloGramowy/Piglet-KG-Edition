@@ -1536,6 +1536,56 @@ static void pigTwerkStartTFT() {
   Serial.println("[PIG] TWERK ACTIVATED");
 }
 
+// ---- Sasquatch walk ----
+static bool     sqActive_  = false;
+static int16_t  sqX_       = -26;
+static uint32_t sqMs_      = 0;
+static uint8_t  sqPhase_   = 0;
+
+static void drawSasquatchTFT(int16_t x, int16_t y, uint8_t phase) {
+  // Head
+  tft.fillCircle(x + 10, y + 3, 5, WHITE);
+  // Body (hunched)
+  tft.fillRoundRect(x + 5, y + 7, 14, 16, 5, WHITE);
+  // Shoulder fur
+  tft.drawPixel(x + 3, y + 8, WHITE);
+  tft.drawPixel(x + 20, y + 8, WHITE);
+  tft.drawPixel(x + 2, y + 10, WHITE);
+  tft.drawPixel(x + 21, y + 10, WHITE);
+  // Arms
+  bool swing = (phase & 1);
+  if (swing) {
+    tft.drawLine(x + 5, y + 10, x + 1, y + 22, WHITE);
+    tft.drawLine(x + 19, y + 10, x + 23, y + 18, WHITE);
+  } else {
+    tft.drawLine(x + 5, y + 10, x + 2, y + 18, WHITE);
+    tft.drawLine(x + 19, y + 10, x + 22, y + 22, WHITE);
+  }
+  // Legs + big feet
+  int16_t lt = y + 22;
+  if (swing) {
+    tft.drawLine(x + 8, lt, x + 4, lt + 8, WHITE);
+    tft.fillRect(x + 2, lt + 8, 5, 2, WHITE);
+    tft.drawLine(x + 15, lt, x + 19, lt + 8, WHITE);
+    tft.fillRect(x + 18, lt + 8, 6, 2, WHITE);
+  } else {
+    tft.drawLine(x + 8, lt, x + 12, lt + 8, WHITE);
+    tft.fillRect(x + 11, lt + 8, 6, 2, WHITE);
+    tft.drawLine(x + 15, lt, x + 11, lt + 8, WHITE);
+    tft.fillRect(x + 9, lt + 8, 5, 2, WHITE);
+  }
+}
+
+static void sasquatchStartTFT() {
+  if (sqActive_ || pigTwerking_) return;
+  sqActive_ = true;
+  sqX_      = -26;
+  sqMs_     = millis();
+  sqPhase_  = 0;
+  tft.fillRect(0, 21, tft.width(), tft.height() - 21, BLACK);
+  Serial.println("[SQ] SIGHTING");
+}
+
 // Twerk draw: FRONT HALF (head, front legs) stays at y.
 //             BACK HALF (body, tail, back legs) rises up by 'rise' pixels.
 static void drawPigTwerkTFT(int16_t x, int16_t y, uint8_t phase) {
@@ -1607,10 +1657,26 @@ static void pigAnimTickTFT() {
 
   uint32_t now = millis();
 
+  // Sasquatch walk — runs instead of pig when active
+  if (sqActive_) {
+    if (now - sqMs_ < 80) return;
+    sqMs_ = now;
+    tft.fillRect(0, 21, tft.width(), tft.height() - 21, BLACK);
+    sqX_ += 2;
+    sqPhase_ = (sqPhase_ + 1) & 3;
+    if (sqX_ < tft.width()) drawSasquatchTFT(sqX_, 76, sqPhase_);
+    if (sqX_ > tft.width() + 4) {
+      sqActive_ = false;
+      tft.fillRect(0, 21, tft.width(), tft.height() - 21, BLACK);
+      pig.x = 0; pig.dx = 1; pig.phase = 0;
+      Serial.println("[SQ] Gone");
+    }
+    return;
+  }
+
   // Twerk expires after 3 s
   if (pigTwerking_ && (now - pigTwerkMs_ >= 3000)) {
     pigTwerking_ = false;
-    // Clear twerk area and redraw header cleanly
     tft.fillRect(0, 21, tft.width(), tft.height() - 21, BLACK);
     Serial.println("[PIG] Twerk complete");
   }
@@ -3160,8 +3226,9 @@ static void pollButton() {
 
   // Evaluate click count after multi-tap window expires
   if (clickCount > 0 && (millis() - firstClickMs) > MULTI_MS) {
-    if (clickCount >= 2 && currentPage == 3) {
-      // Double-tap on pig page -> TWERK
+    if (clickCount >= 3 && currentPage == 3) {
+      sasquatchStartTFT();
+    } else if (clickCount == 2 && currentPage == 3) {
       pigTwerkStartTFT();
     } else {
       // Single (or unrecognised multi) press -> advance page

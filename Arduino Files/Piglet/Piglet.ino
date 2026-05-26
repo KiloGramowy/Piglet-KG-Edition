@@ -175,8 +175,9 @@ static void pollButton() {
 
   // Evaluate click count after double-press window expires
   if (clickCount > 0 && (millis() - firstClickMs) > DOUBLE_PRESS_MS) {
-    if (clickCount >= 2 && currentPage == 4) {
-      // Double press on pig page -> TWERK
+    if (clickCount >= 3 && currentPage == 4) {
+      sasquatchStart();
+    } else if (clickCount == 2 && currentPage == 4) {
       pigTwerkStart();
     } else if (clickCount >= 2 && currentPage == 0) {
       // Double press on status page -> toggle scan pause
