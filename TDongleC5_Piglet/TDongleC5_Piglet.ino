@@ -40,7 +40,7 @@
 #include "esp_wifi.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.51"
+#define FIRMWARE_VERSION "v2.52"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
@@ -271,9 +271,11 @@ static void apa102Write(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness = 8)
   for (int i = 0; i < 4; i++) sendByte(0xFF);
 
   // Restore SPI peripheral routing — pinMode(OUTPUT) above disconnects pins from the
-  // SPI GPIO matrix (gpio_matrix_out sets SIG_GPIO_OUT_IDX). SPI.end()+begin() re-attaches
-  // MOSI (GPIO2) and MISO (GPIO7) back to the SPI peripheral.
-  SPI.end();
+  // SPI GPIO matrix (gpio_matrix_out sets SIG_GPIO_OUT_IDX). Calling SPI.begin() on an
+  // already-running bus re-attaches MOSI (GPIO2) and MISO (GPIO7) without stopping the
+  // peripheral. SPI.end() must NOT be called here — it destroys the bus state and
+  // orphans the SD card's registered SPI device handle, causing all subsequent SD
+  // writes (including CSV logging) to silently fail.
   SPI.begin(PINS.sd_sck, PINS.sd_miso, PINS.sd_mosi);
 }
 
@@ -539,7 +541,29 @@ static void appendWigleRow(const String& mac, const String& ssid, const String& 
   line += ",0,WIFI"; // RCOIs (empty), MfgrId (0), Type
 
   digitalWrite(PINS.tft_cs, HIGH);
-  logFile.println(line);
+  size_t written = logFile.println(line);
+
+  // Detect silent write failure — if println() returns 0 for a non-empty line,
+  // the SD card or file handle is broken. Attempt to reopen the log file once;
+  // if that also fails, mark SD as unusable until next boot.
+  if (written == 0 && line.length() > 0) {
+    static uint8_t consecFails = 0;
+    consecFails++;
+    Serial.printf("[SD] Write failed (%u consecutive)\n", consecFails);
+    if (consecFails >= 3) {
+      Serial.println("[SD] Attempting log reopen...");
+      closeLogFile();
+      if (openLogFile()) {
+        Serial.println("[SD] Reopen OK — retrying write");
+        logFile.println(line);  // best-effort retry
+        consecFails = 0;
+      } else {
+        Serial.println("[SD] Reopen FAILED — SD marked unusable");
+        sdOk = false;
+      }
+    }
+    return;
+  }
 
   static uint32_t lastFlushMs = 0;
   static uint32_t linesSinceFlush = 0;
@@ -3016,6 +3040,14 @@ static void processScanResults(int n) {
   }
 
   WiFi.scanDelete();
+
+  // Force flush after each scan batch so data reaches the SD card promptly.
+  // Minimises data loss if the device loses power between scan cycles.
+  if (wrote > 0 && sdOk && logFile) {
+    digitalWrite(PINS.tft_cs, HIGH);
+    logFile.flush();
+  }
+
   if (wrote > 0) ledPulseGreen();
   Serial.printf("[SCAN] Wrote %lu rows\n", (unsigned long)wrote);
 }

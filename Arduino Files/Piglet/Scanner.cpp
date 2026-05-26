@@ -55,6 +55,11 @@ static void processScanResults(int n) {
   }
 
   WiFi.scanDelete();
+
+  // Force flush after each scan batch so data reaches the SD card promptly.
+  // Minimises data loss if the device loses power between scan cycles.
+  if (wrote > 0 && sdOk && logFile) logFile.flush();
+
   Serial.printf("[SCAN] Wrote %lu rows\n", (unsigned long)wrote);
 }
 

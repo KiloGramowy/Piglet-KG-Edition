@@ -248,7 +248,29 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   line += String(accM, 1); line += ",";
   line += ",0,WIFI"; // RCOIs (empty), MfgrId (0), Type
 
-  logFile.println(line);
+  size_t written = logFile.println(line);
+
+  // Detect silent write failure — if println() returns 0 for a non-empty line,
+  // the SD card or file handle is broken. Attempt to reopen the log file once;
+  // if that also fails, mark SD as unusable until next boot.
+  if (written == 0 && line.length() > 0) {
+    static uint8_t consecFails = 0;
+    consecFails++;
+    Serial.printf("[SD] Write failed (%u consecutive)\n", consecFails);
+    if (consecFails >= 3) {
+      Serial.println("[SD] Attempting log reopen...");
+      closeLogFile();
+      if (openLogFile()) {
+        Serial.println("[SD] Reopen OK — retrying write");
+        logFile.println(line);  // best-effort retry
+        consecFails = 0;
+      } else {
+        Serial.println("[SD] Reopen FAILED — SD marked unusable");
+        sdOk = false;
+      }
+    }
+    return;
+  }
 
   // Flush less often to avoid stalls (SD writes can block hard)
   static uint32_t lastFlushMs = 0;
