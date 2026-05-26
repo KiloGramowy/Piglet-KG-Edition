@@ -303,36 +303,57 @@ static uint32_t sqMs_      = 0;
 static uint8_t  sqPhase_   = 0;
 
 static void drawSasquatch(int16_t x, int16_t y, uint8_t phase) {
-  // Head
-  display.fillCircle(x + 10, y + 3, 5, SSD1306_WHITE);
-  // Body (hunched)
-  display.fillRoundRect(x + 5, y + 7, 14, 16, 5, SSD1306_WHITE);
-  // Shoulder fur
-  display.drawPixel(x + 3, y + 8, SSD1306_WHITE);
-  display.drawPixel(x + 20, y + 8, SSD1306_WHITE);
-  display.drawPixel(x + 2, y + 10, SSD1306_WHITE);
-  display.drawPixel(x + 21, y + 10, SSD1306_WHITE);
-  // Arms
+  // Patterson-Gimlin style: forward-leaning torso, conical head, long arms, big feet.
+  // Bounding box ~24w x 34h. Facing right.
+  // Head (cone shape, no neck, leaning forward)
+  display.fillTriangle(x + 15, y, x + 12, y + 6, x + 19, y + 6, SSD1306_WHITE);
+  display.fillRect(x + 13, y + 4, 6, 3, SSD1306_WHITE);
+  // Brow ridge
+  display.drawFastHLine(x + 13, y + 3, 5, SSD1306_WHITE);
+  // Torso (wide, hunched forward)
+  display.fillRoundRect(x + 8, y + 7, 12, 14, 3, SSD1306_WHITE);
+  // Chest bulk
+  display.fillRect(x + 7, y + 8, 3, 8, SSD1306_WHITE);
+  // Shoulder hump
+  display.fillRect(x + 10, y + 5, 8, 4, SSD1306_WHITE);
+  // Arms (long, ape-like, swing with walk)
   bool swing = (phase & 1);
   if (swing) {
-    display.drawLine(x + 5, y + 10, x + 1, y + 22, SSD1306_WHITE);
-    display.drawLine(x + 19, y + 10, x + 23, y + 18, SSD1306_WHITE);
+    // Left arm back, right arm forward
+    display.drawLine(x + 8, y + 10, x + 4, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 8, y + 11, x + 5, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 10, x + 22, y + 18, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 11, x + 23, y + 18, SSD1306_WHITE);
   } else {
-    display.drawLine(x + 5, y + 10, x + 2, y + 18, SSD1306_WHITE);
-    display.drawLine(x + 19, y + 10, x + 22, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 8, y + 10, x + 5, y + 18, SSD1306_WHITE);
+    display.drawLine(x + 8, y + 11, x + 6, y + 18, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 10, x + 23, y + 22, SSD1306_WHITE);
+    display.drawLine(x + 19, y + 11, x + 22, y + 22, SSD1306_WHITE);
   }
-  // Legs + big feet
-  int16_t lt = y + 22;
+  // Legs (thick, bent at knee) + oversized feet
+  int16_t hip = y + 20;
   if (swing) {
-    display.drawLine(x + 8, lt, x + 4, lt + 8, SSD1306_WHITE);
-    display.fillRect(x + 2, lt + 8, 5, 2, SSD1306_WHITE);
-    display.drawLine(x + 15, lt, x + 19, lt + 8, SSD1306_WHITE);
-    display.fillRect(x + 18, lt + 8, 6, 2, SSD1306_WHITE);
+    // Left leg back
+    display.fillRect(x + 8, hip, 3, 6, SSD1306_WHITE);
+    display.drawLine(x + 8, hip + 6, x + 5, hip + 10, SSD1306_WHITE);
+    display.drawLine(x + 9, hip + 6, x + 6, hip + 10, SSD1306_WHITE);
+    display.fillRect(x + 3, hip + 10, 5, 2, SSD1306_WHITE);
+    // Right leg forward
+    display.fillRect(x + 14, hip, 3, 5, SSD1306_WHITE);
+    display.drawLine(x + 14, hip + 5, x + 17, hip + 10, SSD1306_WHITE);
+    display.drawLine(x + 15, hip + 5, x + 18, hip + 10, SSD1306_WHITE);
+    display.fillRect(x + 16, hip + 10, 6, 2, SSD1306_WHITE);
   } else {
-    display.drawLine(x + 8, lt, x + 12, lt + 8, SSD1306_WHITE);
-    display.fillRect(x + 11, lt + 8, 6, 2, SSD1306_WHITE);
-    display.drawLine(x + 15, lt, x + 11, lt + 8, SSD1306_WHITE);
-    display.fillRect(x + 9, lt + 8, 5, 2, SSD1306_WHITE);
+    // Left leg forward
+    display.fillRect(x + 9, hip, 3, 5, SSD1306_WHITE);
+    display.drawLine(x + 9, hip + 5, x + 12, hip + 10, SSD1306_WHITE);
+    display.drawLine(x + 10, hip + 5, x + 13, hip + 10, SSD1306_WHITE);
+    display.fillRect(x + 11, hip + 10, 6, 2, SSD1306_WHITE);
+    // Right leg back
+    display.fillRect(x + 14, hip, 3, 6, SSD1306_WHITE);
+    display.drawLine(x + 14, hip + 6, x + 11, hip + 10, SSD1306_WHITE);
+    display.drawLine(x + 15, hip + 6, x + 12, hip + 10, SSD1306_WHITE);
+    display.fillRect(x + 9, hip + 10, 5, 2, SSD1306_WHITE);
   }
 }
 
