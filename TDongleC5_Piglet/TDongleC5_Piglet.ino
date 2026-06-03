@@ -38,9 +38,12 @@
 #include <math.h>
 #include <esp_now.h>
 #include "esp_wifi.h"
+#include "driver/gpio.h"
+#include "soc/gpio_sig_map.h"
+#include "esp32-hal-matrix.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.52"
+#define FIRMWARE_VERSION "v2.53"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
@@ -243,16 +246,21 @@ static void apa102Write(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness = 8)
   digitalWrite(PINS.tft_cs, HIGH);
   digitalWrite(PINS.sd_cs, HIGH);
 
-  // Temporarily take over the data/clock pins
-  pinMode(PINS.led_di, OUTPUT);
-  pinMode(PINS.led_ci, OUTPUT);
+  // Temporarily switch data/clock pins from SPI to GPIO output mode for
+  // bit-banging. Using the IDF gpio_set_direction() instead of Arduino's
+  // pinMode() avoids triggering the peripheral manager, which would
+  // permanently detach these pins from the SPI bus (because SPI.begin()
+  // is a no-op when the bus is already started, so pins never get
+  // re-attached). The SPI peripheral and SD card remain intact.
+  gpio_set_direction((gpio_num_t)PINS.led_di, GPIO_MODE_OUTPUT);
+  gpio_set_direction((gpio_num_t)PINS.led_ci, GPIO_MODE_OUTPUT);
 
   auto sendByte = [](uint8_t val) {
     for (int i = 7; i >= 0; i--) {
-      digitalWrite(PINS.led_di, (val >> i) & 1);
-      digitalWrite(PINS.led_ci, HIGH);
+      gpio_set_level((gpio_num_t)PINS.led_di, (val >> i) & 1);
+      gpio_set_level((gpio_num_t)PINS.led_ci, 1);
       delayMicroseconds(1);
-      digitalWrite(PINS.led_ci, LOW);
+      gpio_set_level((gpio_num_t)PINS.led_ci, 0);
       delayMicroseconds(1);
     }
   };
@@ -270,19 +278,19 @@ static void apa102Write(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness = 8)
   // End frame: 32 bits of 1
   for (int i = 0; i < 4; i++) sendByte(0xFF);
 
-  // Restore SPI peripheral routing — pinMode(OUTPUT) above disconnects pins from the
-  // SPI GPIO matrix (gpio_matrix_out sets SIG_GPIO_OUT_IDX). Calling SPI.begin() on an
-  // already-running bus re-attaches MOSI (GPIO2) and MISO (GPIO7) without stopping the
-  // peripheral. SPI.end() must NOT be called here — it destroys the bus state and
-  // orphans the SD card's registered SPI device handle, causing all subsequent SD
-  // writes (including CSV logging) to silently fail.
-  SPI.begin(PINS.sd_sck, PINS.sd_miso, PINS.sd_mosi);
+  // Restore SPI peripheral routing — reconnect the SPI MOSI and MISO
+  // signals to the physical pins via the GPIO matrix. pinMatrixOutAttach
+  // and pinMatrixInAttach are low-level wrappers around gpio_matrix_out/in
+  // that bypass the peripheral manager.
+  pinMatrixOutAttach(PINS.sd_mosi, FSPID_IN_IDX, false, false);
+  gpio_set_direction((gpio_num_t)PINS.sd_miso, GPIO_MODE_INPUT);
+  pinMatrixInAttach(PINS.sd_miso, FSPIQ_OUT_IDX, false);
 }
 
 static void ledOff()   { apa102Write(0, 0, 0, 0); }
-static void ledGreen() { apa102Write(0, 20, 0, 4); }
-static void ledRed()   { apa102Write(20, 0, 0, 4); }
-static void ledBlue()  { apa102Write(0, 0, 20, 4); }
+static void ledGreen() { apa102Write(0, 10, 0, 2); }
+static void ledRed()   { apa102Write(10, 0, 0, 2); }
+static void ledBlue()  { apa102Write(0, 0, 10, 2); }
 
 // Pulse state for non-blocking LED blink
 static uint32_t ledPulseMs = 0;
@@ -1237,8 +1245,8 @@ static void updateTFT(float speedValue) {
   prevGpsFix = gpsHasFix;
   y += line;
 
-  // IP / AP
-  if (forceAll || prevIp != ipNow || prevSta != staNow) {
+  // IP / AP — always repaint while the AP window is active so the countdown updates
+  if (forceAll || prevIp != ipNow || prevSta != staNow || apWindowActive) {
     tft.fillRect(0, y, W, line, BLACK);
     tft.setCursor(2, y + 2);
     if (staNow) {
@@ -3060,6 +3068,7 @@ static void stopAPIfAllowed() {
   if (shouldClose) {
     Serial.printf("[WIFI] Stopping AP (%s).\n", reason);
     WiFi.softAPdisconnect(true); apWindowActive = false;
+    forceStatusFullRedraw();
     apExtended = false; apForceClose = false;
     WiFi.setAutoReconnect(false); WiFi.persistent(false);
     WiFi.disconnect(true, true); delay(50);
@@ -3145,10 +3154,10 @@ static void doScanOnce() {
   static bool     scanInProgress  = false;
   static uint8_t  zeroScanCount   = 0;
 
-  // aggressive:  100 ms/channel dwell, 1500 ms minimum gap between scan starts
-  // powersaving: 200 ms/channel dwell, 10000 ms gap
+  // aggressive:  100 ms/channel dwell, 4500 ms gap (gives radio ~3 s idle per cycle)
+  // powersaving: 200 ms/channel dwell, 12000 ms gap
   bool powersave   = (cfg.scanMode == "powersaving");
-  uint32_t gapMs   = powersave ? 10000 : 1500;
+  uint32_t gapMs   = powersave ? 12000 : 4500;
   uint32_t dwellMs = powersave ?   200 :  100;
 
   // Check if the async scan launched last iteration has finished
@@ -3192,6 +3201,12 @@ static void doScanOnce() {
     Serial.printf("[SCAN] scanNetworks start failed (%d)\n", rc);
     lastScanStartMs = millis();
   }
+}
+
+// Enable WiFi modem sleep so the radio powers down between scan cycles.
+// Called once after boot and after any WiFi mode change that re-enters STA.
+static void enableModemSleep() {
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 }
 
 // ---------------- Page cycling ----------------
@@ -3272,6 +3287,9 @@ void setup() {
   pinMode(PINS.sd_cs, OUTPUT);
   digitalWrite(PINS.sd_cs, HIGH);
 
+  // Reduce CPU clock to lower heat — 80 MHz is plenty for scanning + TFT + GPS.
+  setCpuFrequencyMhz(80);
+
   Serial.begin(115200);
   delay(300);
   // Print immediately — if this line never appears, the device is crashing before
@@ -3322,9 +3340,9 @@ void setup() {
   tft.setRotation(cfg.rotateScreen180 ? 2 : 0);  // Portrait (0=normal, 2=180° flip)
   tft.fillScreen(BLACK);
   tft.setTextColor(WHITE, BLACK);
-  // Backlight: active-LOW (P-ch MOSFET gate)
-  pinMode(PINS.tft_bl, OUTPUT);
-  digitalWrite(PINS.tft_bl, LOW);
+  // Backlight at ~50% via PWM (active-LOW P-ch MOSFET gate: 0=full, 255=off)
+  ledcAttach(PINS.tft_bl, 5000, 8);  // 5 kHz, 8-bit resolution
+  ledcWrite(PINS.tft_bl, 128);       // duty 128/255 ≈ 50% brightness
 
   // Splash
   bootSlogan = pickSplashSlogan();
@@ -3466,6 +3484,8 @@ void setup() {
 
   updateTFT(0);
   ledOff();
+  enableModemSleep();
+  Serial.printf("[BOOT] CPU: %lu MHz\n", (unsigned long)getCpuFrequencyMhz());
   Serial.println("=== Boot complete ===");
 }
 
