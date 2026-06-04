@@ -43,7 +43,7 @@
 #include "esp32-hal-matrix.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.53"
+#define FIRMWARE_VERSION "v2.54"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
@@ -337,14 +337,14 @@ static String iso8601NowUTC() {
   if (gps.date.isValid() && gps.time.isValid() &&
       gps.date.age() < 5000 && gps.time.age() < 5000) {
     char buf[32];
-    snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
              gps.date.year(), gps.date.month(), gps.date.day(),
              gps.time.hour(), gps.time.minute(), gps.time.second());
     return String(buf);
   }
   uint32_t s = millis() / 1000;
   char buf[32];
-  snprintf(buf, sizeof(buf), "1970-01-01T00:%02lu:%02luZ",
+  snprintf(buf, sizeof(buf), "1970-01-01 00:%02lu:%02lu",
            (unsigned long)((s/60)%60), (unsigned long)(s%60));
   return String(buf);
 }
@@ -514,7 +514,7 @@ static bool openLogFile() {
   logFile.print(FIRMWARE_VERSION);
   logFile.print(",model=LilyGo-T-Dongle-C5,release=1,device=");
   logFile.print(deviceField);
-  logFile.println(",board=LilyGo-T-Dongle-C5,brand=Piglet");
+  logFile.println(",display=TFT-ST7735-80x160,board=LilyGo-T-Dongle-C5,brand=Piglet,star=Sol,body=3,subBody=0");
   logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
   logFile.flush();
   return true;
@@ -546,7 +546,7 @@ static void appendWigleRow(const String& mac, const String& ssid, const String& 
   line += String(lon, 6); line += ",";
   line += String(altM, 1); line += ",";
   line += String(accM, 1); line += ",";
-  line += ",0,WIFI"; // RCOIs (empty), MfgrId (0), Type
+  line += ",,WIFI"; // RCOIs (empty), MfgrId (empty), Type
 
   digitalWrite(PINS.tft_cs, HIGH);
   size_t written = logFile.println(line);
@@ -1829,7 +1829,7 @@ static volatile bool  jcmkCoreFoundPending = false;
 static uint8_t        jcmkCoreMacPending[6] = {0};
 
 // ---- Core mode state ----
-#define CORE_MAX_NODES 4
+#define CORE_MAX_NODES 12
 struct CoreNodeInfo {
   bool     active;
   uint8_t  mac[6];
@@ -1848,7 +1848,7 @@ static uint32_t     coreHbCounter   = 0;
 static const uint32_t CORE_HB_MS         = 5000;
 static const uint32_t CORE_NODE_TIMEOUT  = 45000;  // 45 s — accounts for blocking scan latency
 
-#define CORE_REQ_QUEUE   4
+#define CORE_REQ_QUEUE  16
 #define CORE_TEXT_QUEUE 64   // large enough for burst from two nodes per cycle
 struct CorReqSlot  { uint8_t mac[6]; bool isBiscuit; };
 struct CorTextSlot { char    line[JCMK_TEXT_MAX + 1]; };

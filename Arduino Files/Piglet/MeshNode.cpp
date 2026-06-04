@@ -108,7 +108,7 @@ static const uint32_t CORE_HB_MS        = 5000;
 static const uint32_t CORE_NODE_TIMEOUT = 45000;  // 45 s — accounts for blocking scan latency
 
 // Ring buffers: ESP-Now callback → main loop
-#define CORE_REQ_QUEUE   4
+#define CORE_REQ_QUEUE  16
 #define CORE_TEXT_QUEUE 64   // large enough for burst from two nodes per cycle
 
 struct CorReqSlot  { uint8_t mac[6]; bool isBiscuit; };

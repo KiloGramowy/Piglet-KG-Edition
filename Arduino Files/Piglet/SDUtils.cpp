@@ -203,8 +203,8 @@ bool openLogFile() {
   logFile.print(FIRMWARE_VERSION);
   logFile.print(",model="); logFile.print(boardModel);
   logFile.print(",release=1,device="); logFile.print(deviceField);
-  logFile.print(",board="); logFile.print(boardModel);
-  logFile.println(",brand=Piglet");
+  logFile.print(",display=SSD1306-128x64,board="); logFile.print(boardModel);
+  logFile.println(",brand=Piglet,star=Sol,body=3,subBody=0");
   logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
   logFile.flush();
 
@@ -246,7 +246,7 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   line += String(lon, 6); line += ",";
   line += String(altM, 1); line += ",";
   line += String(accM, 1); line += ",";
-  line += ",0,WIFI"; // RCOIs (empty), MfgrId (0), Type
+  line += ",,WIFI"; // RCOIs (empty), MfgrId (empty), Type
 
   size_t written = logFile.println(line);
 

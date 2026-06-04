@@ -37,7 +37,7 @@ void drawPageMeshNode();
 //  long-press again returns to Node mode.
 // ================================================================
 
-#define CORE_MAX_NODES 4
+#define CORE_MAX_NODES 12
 
 struct CoreNodeInfo {
   bool     active;
