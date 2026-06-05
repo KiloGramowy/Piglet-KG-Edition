@@ -1,5 +1,5 @@
 #pragma once
-#define FIRMWARE_VERSION "v2.55"
+#define FIRMWARE_VERSION "v2.56"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>

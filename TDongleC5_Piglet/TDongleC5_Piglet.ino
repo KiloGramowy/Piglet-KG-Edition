@@ -43,7 +43,7 @@
 #include "esp32-hal-matrix.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.55"
+#define FIRMWARE_VERSION "v2.56"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
@@ -454,6 +454,10 @@ static String normalizeSdPath(const char* dir, const char* nameIn) {
   return d + "/" + n;
 }
 
+// Row limit per CSV: ~120 bytes/row x 100k = ~12 MB, under WDGoWars 15 MB cap.
+static const uint32_t CSV_MAX_ROWS = 100000;
+static uint32_t       csvRowCount  = 0;
+
 // Sanitise device name for filename/header use
 static String tdongleSanitiseName(const String& raw) {
   String s = raw; s.replace(" ", "_");
@@ -517,6 +521,7 @@ static bool openLogFile() {
   logFile.println(",display=TFT-ST7735-80x160,board=LilyGo-T-Dongle-C5,brand=Piglet,star=Sol,body=3,subBody=0");
   logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
   logFile.flush();
+  csvRowCount = 0;
   return true;
 }
 
@@ -524,6 +529,13 @@ static void appendWigleRow(const String& mac, const String& ssid, const String& 
                            const String& firstSeen, int channel, int rssi,
                            double lat, double lon, double altM, double accM) {
   if (!sdOk || !logFile) return;
+
+  // Rotate CSV before it exceeds the WDGoWars 15 MB upload limit
+  if (csvRowCount >= CSV_MAX_ROWS) {
+    Serial.println("[SD] CSV row limit reached, rotating log file");
+    closeLogFile();
+    if (!openLogFile()) return;
+  }
 
   String safeSsid = ssid;
   safeSsid.replace("\"", "\"\"");
@@ -550,6 +562,7 @@ static void appendWigleRow(const String& mac, const String& ssid, const String& 
 
   digitalWrite(PINS.tft_cs, HIGH);
   size_t written = logFile.println(line);
+  csvRowCount++;
 
   // Detect silent write failure — if println() returns 0 for a non-empty line,
   // the SD card or file handle is broken. Attempt to reopen the log file once;

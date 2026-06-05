@@ -126,6 +126,12 @@ bool moveToUploaded(const String& srcPath) {
 
 // ---- Log file ----
 
+// Row limit per CSV file: ~120 bytes/row × 100k = ~12 MB, safely under the
+// WDGoWars 15 MB upload cap. When the limit is reached, the active CSV is
+// closed and a fresh one is opened with proper WiGLE headers.
+static const uint32_t CSV_MAX_ROWS = 100000;
+static uint32_t       csvRowCount  = 0;
+
 // Sanitise a user-provided device name for safe use in filenames.
 // Keeps alphanumerics, hyphens, underscores; replaces spaces with _;
 // strips everything else; truncates to 20 chars.
@@ -207,6 +213,7 @@ bool openLogFile() {
   logFile.println(",brand=Piglet,star=Sol,body=3,subBody=0");
   logFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
   logFile.flush();
+  csvRowCount = 0;
 
   Serial.println("[SD] Log file initialized with WiGLE headers");
   return true;
@@ -224,6 +231,13 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
                     const String& firstSeen, int channel, int rssi,
                     double lat, double lon, double altM, double accM) {
   if (!sdOk || !logFile) return;
+
+  // Rotate CSV before it exceeds the WDGoWars 15 MB upload limit
+  if (csvRowCount >= CSV_MAX_ROWS) {
+    Serial.println("[SD] CSV row limit reached, rotating log file");
+    closeLogFile();
+    if (!openLogFile()) return;
+  }
 
   String safeSsid = ssid;
   safeSsid.replace("\"", "\"\"");
@@ -249,6 +263,7 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   line += ",,WIFI"; // RCOIs (empty), MfgrId (empty), Type
 
   size_t written = logFile.println(line);
+  csvRowCount++;
 
   // Detect silent write failure — if println() returns 0 for a non-empty line,
   // the SD card or file handle is broken. Attempt to reopen the log file once;
