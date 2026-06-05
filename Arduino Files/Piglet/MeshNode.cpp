@@ -15,7 +15,7 @@ static const uint32_t JCMK_REQ_INIT_MS = 300;
 static const uint32_t JCMK_REQ_MAX_MS  = 5000;
 static const uint32_t JCMK_HB_MS          = 5000;
 static const uint32_t NODE_SCAN_DWELL_MS  = 80;    // ms per channel (JCMK CHANNEL_TIMER)
-static const uint32_t NODE_ADMIN_WIN_MS   = 300;   // ch-6 window after each full cycle
+static const uint32_t NODE_ADMIN_WIN_MS   = 500;   // ch-6 window after each full cycle
 #define JCMK_TEXT_MAX 200
 
 enum JcmkMsgType : uint8_t {
@@ -105,11 +105,11 @@ static uint32_t coreLastHbMs   = 0;
 static uint32_t coreHbCounter  = 0;
 
 static const uint32_t CORE_HB_MS        = 5000;
-static const uint32_t CORE_NODE_TIMEOUT = 45000;  // 45 s — accounts for blocking scan latency
+static const uint32_t CORE_NODE_TIMEOUT = 90000;  // 90 s — generous for many-node ESP-Now collisions
 
 // Ring buffers: ESP-Now callback → main loop
 #define CORE_REQ_QUEUE  16
-#define CORE_TEXT_QUEUE 64   // large enough for burst from two nodes per cycle
+#define CORE_TEXT_QUEUE 192  // sized for burst from 12 nodes × ~15 networks each
 
 struct CorReqSlot  { uint8_t mac[6]; bool isBiscuit; };
 struct CorTextSlot { char    line[JCMK_TEXT_MAX + 1]; };
@@ -443,16 +443,16 @@ static void coreResendAdminToAll() {
 }
 
 static void coreSendHeartbeatToAll() {
-  // Use full-size jcmk_text_msg_t (212 bytes) so Biscuit Node accepts it
-  // (Biscuit drops packets < 212 bytes). JCMK nodes only need len >= 5.
+  // Broadcast a single heartbeat instead of per-node unicast.
+  // At 12 nodes, unicast was 12 × 212-byte sends with 10 ms gaps = 120+ ms of
+  // blocking channel time. One broadcast reaches all nodes simultaneously and
+  // keeps ch 6 clear for incoming TEXT bursts.
   jcmk_text_msg_t msg = {};
   memcpy(msg.magic, JCMK_MAGIC, 4);
   msg.type    = JCMK_MSG_HEARTBEAT;
   msg.counter = ++coreHbCounter;
   msg.len     = 0;
-  for (uint8_t i = 0; i < CORE_MAX_NODES; i++)
-    if (coreNodes[i].active)
-      esp_now_send(coreNodes[i].mac, (uint8_t*)&msg, sizeof(msg));
+  esp_now_send(JCMK_BCAST, (uint8_t*)&msg, sizeof(msg));
 }
 
 static void coreParseAndLogText(const char* line) {
@@ -507,7 +507,9 @@ static void nodeDoScanTick() {
       while (GPSSerial.available()) gps.encode(GPSSerial.read());
       if (jcmkHaveCore) { jcmkSendHeartbeat(); jcmkLastHbMs = millis(); }
       nodeScanAdminWin = true;
-      nodeScanAdminMs  = millis();
+      // Random jitter (0-200 ms) staggers admin windows so nodes with similar
+      // channel counts don't all transmit on ch 6 at the same instant.
+      nodeScanAdminMs  = millis() + (uint32_t)(esp_random() % 200);
       return;
     }
 

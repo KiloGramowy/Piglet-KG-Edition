@@ -43,7 +43,7 @@
 #include "esp32-hal-matrix.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.54"
+#define FIRMWARE_VERSION "v2.55"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
@@ -1754,7 +1754,7 @@ static const uint32_t JCMK_REQ_INIT_MS     = 300;
 static const uint32_t JCMK_REQ_MAX_MS      = 5000;
 static const uint32_t JCMK_HB_MS          = 5000;
 static const uint32_t NODE_SCAN_DWELL_MS  = 80;    // ms per channel (JCMK CHANNEL_TIMER)
-static const uint32_t NODE_ADMIN_WIN_MS   = 300;   // ch-6 window after each full cycle
+static const uint32_t NODE_ADMIN_WIN_MS   = 500;   // ch-6 window after each scan cycle
 #define JCMK_TEXT_MAX 200
 
 enum JcmkMsgType : uint8_t {
@@ -1846,10 +1846,10 @@ static uint8_t      coreAssignVer   = 0;
 static uint32_t     coreLastHbMs    = 0;
 static uint32_t     coreHbCounter   = 0;
 static const uint32_t CORE_HB_MS         = 5000;
-static const uint32_t CORE_NODE_TIMEOUT  = 45000;  // 45 s — accounts for blocking scan latency
+static const uint32_t CORE_NODE_TIMEOUT  = 90000;  // 90 s — generous for many-node ESP-Now collisions
 
 #define CORE_REQ_QUEUE  16
-#define CORE_TEXT_QUEUE 64   // large enough for burst from two nodes per cycle
+#define CORE_TEXT_QUEUE 192  // sized for burst from 12 nodes x ~15 networks each
 struct CorReqSlot  { uint8_t mac[6]; bool isBiscuit; };
 struct CorTextSlot { char    line[JCMK_TEXT_MAX + 1]; };
 static CorReqSlot         coreReqBuf[CORE_REQ_QUEUE];
@@ -2121,12 +2121,12 @@ static void coreResendAdminToAll() {
 }
 
 static void coreSendHeartbeatToAll() {
-  // Use full-size jcmk_text_msg_t (212 bytes) so Biscuit Node accepts it.
+  // Broadcast a single heartbeat instead of per-node unicast.
+  // Reduces ch 6 congestion from 12 sends down to 1.
   jcmk_text_msg_t msg = {};
   memcpy(msg.magic, JCMK_MAGIC, 4);
   msg.type = JCMK_MSG_HEARTBEAT; msg.counter = ++coreHbCounter; msg.len = 0;
-  for (uint8_t i = 0; i < CORE_MAX_NODES; i++)
-    if (coreNodes[i].active) esp_now_send(coreNodes[i].mac, (uint8_t*)&msg, sizeof(msg));
+  esp_now_send(JCMK_BCAST, (uint8_t*)&msg, sizeof(msg));
 }
 
 static void coreParseAndLogText(const char* line) {
@@ -2241,7 +2241,8 @@ static void nodeDoScanTick() {
       jcmkSetChannel(JCMK_ESPNOW_CH);
       if (jcmkHaveCore) { jcmkSendHeartbeat(); jcmkLastHbMs = millis(); }
       nodeScanAdminWin = true;
-      nodeScanAdminMs  = millis();
+      // Random jitter (0-200 ms) staggers admin windows across nodes
+      nodeScanAdminMs  = millis() + (uint32_t)(esp_random() % 200);
       return;
     }
 

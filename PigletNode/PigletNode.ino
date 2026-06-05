@@ -45,8 +45,8 @@ static const uint32_t REQ_INIT_MS         = 300;
 static const uint32_t REQ_MAX_MS          = 5000;
 static const uint32_t HB_MS              = 5000;
 static const uint32_t SCAN_DWELL_MS      = 80;   // ms per channel
-static const uint32_t ADMIN_WIN_MS       = 300;  // ch-6 window after each scan cycle
-static const uint32_t CORE_TIMEOUT_MS    = 30000; // re-search if no ADMIN for 30 s
+static const uint32_t ADMIN_WIN_MS       = 500;  // ch-6 window after each scan cycle
+static const uint32_t CORE_TIMEOUT_MS    = 90000; // re-search if no ADMIN for 90 s
 #define JCMK_TEXT_MAX 200
 
 enum JcmkMsgType : uint8_t {
@@ -313,7 +313,8 @@ static void scanTick() {
       sendHeartbeat();
       lastHbMs     = millis();
       scanAdminWin = true;
-      scanAdminMs  = millis();
+      // Random jitter (0-200 ms) staggers admin windows across nodes
+      scanAdminMs  = millis() + (uint32_t)(esp_random() % 200);
       return;
     }
 
