@@ -1,5 +1,6 @@
 #include "MeshNode.h"
 #include "Globals.h"
+#include "Config.h"
 #include "GPS.h"
 #include "SDUtils.h"
 #include <esp_now.h>
@@ -516,6 +517,13 @@ static void nodeDoScanTick() {
     uint8_t chIdx = jcmkStartIdx + nodeScanChOffset;
     if (chIdx >= JCMK_NUM_CHANNELS) { nodeScanChOffset++; return; }
     uint8_t channel = JCMK_CHANNELS[chIdx];
+
+    // Skip 5 GHz channels on 2.4 GHz-only hardware (S3, C6).
+    // wardriverIsC5() returns true only for C5 (dual-band); all others are 2.4 GHz only.
+    if (channel > 14 && !wardriverIsC5()) {
+      nodeScanChOffset++;  // hop over without attempting the scan
+      return;
+    }
 
     // Async scan of this single channel only (no blocking)
     int16_t rc = WiFi.scanNetworks(/*async*/true, /*hidden*/true,
