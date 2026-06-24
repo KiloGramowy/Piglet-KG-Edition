@@ -30,6 +30,7 @@ Designed for **[Seeed XIAO ESP32-S3](https://wiki.seeedstudio.com/xiao_esp32s3_g
 - **ESP-Now Mesh Node mode** — pair with a coordinator device for multi-node wardriving
 - **Mesh auto-start on boot** — configure `meshModeOnBoot` to automatically enter Core or Node mode after uploads complete, bypassing the AP window
 - **Screen rotation** — mount the display upside-down and set `rotateScreen180=true` to flip 180°
+- **Auto-start wardriving after uploads** — set `autoStartAfterUpload=true` to disconnect from home Wi-Fi immediately after boot uploads complete and begin scanning without delay
 - **PigletNode** — standalone minimal firmware for XIAO ESP32-C5 that boots directly as a mesh node (no display, GPS, or SD required)
 
 
@@ -356,6 +357,18 @@ meshModeOnBoot=none
 # Reboot required after changing.
 
 rotateScreen180=false
+
+# ------------------------------------------------------------
+# Auto-Start Wardriving After Uploads
+# ------------------------------------------------------------
+# When true: disconnects from home Wi-Fi immediately after boot uploads
+# complete and begins wardriving without delay. The web UI remains
+# accessible if you later connect to the Wardriver AP, but the device
+# will not hold the STA link open.
+# Values: true or false
+# Reboot required after changing.
+
+autoStartAfterUpload=false
 ```
 
 

@@ -43,7 +43,7 @@
 #include "esp32-hal-matrix.h"
 
 // Firmware version
-#define FIRMWARE_VERSION "v2.56"
+#define FIRMWARE_VERSION "v2.57"
 
 // ---------------- Pins (T-DONGLE C5) ----------------
 struct PinMap {
@@ -3118,6 +3118,11 @@ static bool shouldPauseScanning() {
   return false;
 }
 
+// Last-known GPS position — used when fix is temporarily lost so networks
+// aren't logged at 0,0 (null island).
+static bool   lastGpsValid = false;
+static double lastLat = 0, lastLon = 0, lastAlt = 0, lastAcc = 0;
+
 // ---------------- Scan (2.4 + 5 GHz) ----------------
 static void processScanResults(int n) {
   if (n <= 0) { WiFi.scanDelete(); return; }
@@ -3127,6 +3132,10 @@ static void processScanResults(int n) {
   if (gpsHasFix) {
     lat = gps.location.lat(); lon = gps.location.lng();
     altM = gps.altitude.meters(); accM = gps.hdop.hdop();
+    lastLat = lat; lastLon = lon; lastAlt = altM; lastAcc = accM;
+    lastGpsValid = true;
+  } else if (lastGpsValid) {
+    lat = lastLat; lon = lastLon; altM = lastAlt; accM = lastAcc;
   }
 
   uint32_t wrote = 0;

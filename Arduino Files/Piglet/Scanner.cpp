@@ -18,6 +18,12 @@ static String authModeToString(wifi_auth_mode_t m) {
   }
 }
 
+// Last-known GPS position — used when fix is temporarily lost so networks
+// aren't logged at 0,0 (null island). Cleared on boot; only populated once
+// a real fix has been obtained at least once.
+static bool   lastGpsValid = false;
+static double lastLat  = 0, lastLon = 0, lastAlt = 0, lastAcc = 0;
+
 // ---- Result processor (shared between sync and async paths) ----
 static void processScanResults(int n) {
   if (n <= 0) { WiFi.scanDelete(); return; }
@@ -29,6 +35,12 @@ static void processScanResults(int n) {
     lon  = gps.location.lng();
     altM = gps.altitude.meters();
     accM = gps.hdop.hdop();
+    // Cache for use during temporary fix loss
+    lastLat = lat; lastLon = lon; lastAlt = altM; lastAcc = accM;
+    lastGpsValid = true;
+  } else if (lastGpsValid) {
+    // Use last-known position until fix returns
+    lat = lastLat; lon = lastLon; altM = lastAlt; accM = lastAcc;
   }
 
   uint32_t wrote = 0;
