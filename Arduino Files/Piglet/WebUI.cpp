@@ -386,6 +386,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <option value="true">Rotated 180&deg;</option>
         </select>
       </div>
+      <div><label>Auto-Start Wardriving After Uploads (requires reboot)</label>
+        <select id="autoStartAfterUpload">
+          <option value="false">Disabled &mdash; Stay on Home Wi-Fi (default)</option>
+          <option value="true">Enabled &mdash; Disconnect and Wardrive Immediately</option>
+        </select>
+      </div>
     </div>
     <div class="row mt-md">
       <button class="btn-primary" onclick="saveCfg()">Save Config</button>
@@ -500,7 +506,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -581,7 +587,7 @@ async function deleteAllLogs(){
 
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -842,6 +848,7 @@ static void handleStatus() {
   c["deviceName"]     = cfg.deviceName;
   c["meshModeOnBoot"] = cfg.meshModeOnBoot;
   c["rotateScreen180"] = cfg.rotateScreen180;
+  c["autoStartAfterUpload"] = cfg.autoStartAfterUpload;
 
   String output;
   serializeJson(doc, output);

@@ -442,9 +442,28 @@ void setup() {
     }
   }
 
+  // Auto-start wardriving: if enabled, drop the STA link after uploads so
+  // scanning begins immediately. shouldPauseScanning() returns true while
+  // WL_CONNECTED, so without this the device waits for STA to time out.
+  // Skipped when meshModeOnBoot is set (mesh mode handles its own teardown).
+  {
+    String mm = cfg.meshModeOnBoot; mm.toLowerCase();
+    bool meshBoot = (mm == "core" || mm == "node");
+    if (cfg.autoStartAfterUpload && staOk && !meshBoot) {
+      Serial.println("[BOOT] autoStartAfterUpload: disconnecting STA — wardriving begins now");
+      WiFi.setAutoReconnect(false);
+      WiFi.persistent(false);
+      WiFi.disconnect(true, false);  // eraseap=false keeps NVS credentials
+      delay(100);
+      WiFi.mode(WIFI_STA);           // idle STA ready for scanning
+      staOk = false;                 // suppress STA IP print below
+      scanningEnabled = true;
+    }
+  }
+
   // Now start web server after WiGLE operations are complete
   startWebServer();
-  
+
   if (staOk) {
     Serial.print("[WEB] STA IP: ");
     Serial.println(WiFi.localIP());

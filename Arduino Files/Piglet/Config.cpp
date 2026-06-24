@@ -127,6 +127,10 @@ void cfgAssignKV(const String& k, const String& v) {
     String vv = v; vv.toLowerCase();
     cfg.rotateScreen180 = (vv == "true" || vv == "1");
   }
+  else if (k == "autoStartAfterUpload") {
+    String vv = v; vv.toLowerCase();
+    cfg.autoStartAfterUpload = (vv == "true" || vv == "1");
+  }
 }
 
 // ---------------- Load / Save ----------------
@@ -287,6 +291,12 @@ bool saveConfigToSD() {
   f.println("");
   f.println("# Rotate screen 180 degrees (true = upside-down mount). Requires reboot.");
   f.print("rotateScreen180="); f.println(cfg.rotateScreen180 ? "true" : "false");
+
+  f.println("");
+  f.println("# Disconnect from home WiFi after boot uploads and start wardriving immediately.");
+  f.println("# true = wardrive right after uploads complete (headless mode).");
+  f.println("# false = stay on home WiFi, keep web UI accessible (default).");
+  f.print("autoStartAfterUpload="); f.println(cfg.autoStartAfterUpload ? "true" : "false");
 
   f.flush();
   f.close();

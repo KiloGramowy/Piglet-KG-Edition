@@ -42,6 +42,12 @@ struct Config {
   // Rotate the OLED display 180° (true = upside-down mount, false = normal).
   // Requires reboot to take effect.
   bool rotateScreen180 = false;
+
+  // When true: after boot uploads complete, disconnect from home WiFi and
+  // begin wardriving immediately instead of staying on the STA connection.
+  // The web UI is still reachable if you connect to the Wardriver AP later,
+  // but the device will not hold the STA link open. Requires reboot.
+  bool autoStartAfterUpload = false;
 };
 
 const PinMap& detectPinsByChip();
