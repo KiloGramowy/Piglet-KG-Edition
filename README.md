@@ -371,6 +371,29 @@ rotateScreen180=false
 autoStartAfterUpload=false
 ```
 
+### Auto-Start Wardriving After Uploads — How to Disable
+
+> **Important:** When `autoStartAfterUpload=true`, the device disconnects from your home Wi-Fi immediately after uploads finish and goes straight into wardriving. Because it no longer holds the STA connection, the web UI is **not** reachable on your home network after boot.
+
+To disable this setting after it has been enabled, you have two options:
+
+**Option 1 — Connect via the Wardriver AP**
+
+When Piglet is away from the saved home network (or the home network is unavailable), it falls back to its own SoftAP. Connect to it and use the web UI:
+
+1. Power on the device somewhere the home Wi-Fi is not in range (or temporarily forget the home network on the device by clearing `homeSsid` in the config)
+2. Connect your phone or laptop to the **Wardriver SSID** (default: `Piglet-WARDRIVE` / `wardrive1234`)
+3. Open a browser and go to **`http://192.168.4.1`**
+4. In the **Configuration** section, set **Auto-Start Wardriving After Uploads** to **Disabled**
+5. Click **Save & Reboot**
+
+**Option 2 — Edit the SD card directly**
+
+1. Remove the SD card from the device
+2. Open `wardriver.cfg` in any text editor
+3. Change `autoStartAfterUpload=true` to `autoStartAfterUpload=false`
+4. Save the file, re-insert the SD card, and reboot
+
 
 ## Button Functions
 
