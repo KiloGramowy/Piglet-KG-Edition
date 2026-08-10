@@ -7,6 +7,8 @@ static const uint32_t GPS_CACHE_MIN_MINUTES     = 1;
 static const uint32_t GPS_CACHE_MAX_MINUTES     = 7UL * 24UL * 60UL;  // 1 week
 static const uint8_t WIFI24_CHANNEL_MAX_COUNT   = 14;
 static const uint8_t WIFI5_CHANNEL_MAX_COUNT    = 28;
+static const uint16_t WIFI_DWELL_MIN_MS         = 20;
+static const uint16_t WIFI_DWELL_MAX_MS         = 1500;
 
 struct Config {
   String wigleBasicToken;
@@ -21,6 +23,8 @@ struct Config {
   uint8_t wifi24Channels[WIFI24_CHANNEL_MAX_COUNT] = {};
   uint8_t wifi5ChannelCount = 0;
   uint8_t wifi5Channels[WIFI5_CHANNEL_MAX_COUNT] = {};
+  uint16_t wifi24DwellMs = 0; // 0 = use scanMode-derived dwell
+  uint16_t wifi5DwellMs = 0;  // 0 = use scanMode-derived dwell
   String board = "auto"; // auto | s3 | c5 | c6 | c3 | exp  (pins selected at boot; reboot required after change)
   String speedUnits  = "kmh"; // kmh | mph
   int battPin        = -1;    // GPIO for battery voltage ADC (-1 = disabled). Expects 1:2 voltage divider from LiPo.

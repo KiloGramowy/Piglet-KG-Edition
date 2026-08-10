@@ -366,6 +366,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         <div class="cfg-help">Channel profiles trade scan speed for coverage. KG Recommended profiles are starting points for field testing. Original mode preserves Piglet's normal all-channel scanner.</div>
         <input id="wifi24Channels" type="hidden">
         <input id="wifi5Channels" type="hidden">
+        <input id="wifi24DwellMs" type="hidden">
+        <input id="wifi5DwellMs" type="hidden">
         <div class="cfg-grid">
           <div>
             <label>Channel scanning mode</label>
@@ -398,6 +400,24 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
             </select>
             <input id="wifi5CustomChannels" class="mt-sm hidden" placeholder="36,40,44,48,100">
             <div class="field-help">The Common profile focuses on 36-48 for a faster 5 GHz sweep. All supported channels also scans DFS and additional channels, increasing coverage but making a full cycle slower.</div>
+          </div>
+          <div>
+            <label>2.4 GHz dwell (ms)</label>
+            <select id="wifi24DwellMode" onchange="updateChannelProfileVisibility()">
+              <option value="auto">Auto / scan mode default</option>
+              <option value="custom">Explicit dwell</option>
+            </select>
+            <input id="wifi24DwellInput" class="mt-sm hidden" type="number" min="20" max="1500" step="1" value="110">
+            <div class="field-help">Longer dwell improves the chance of hearing AP beacons but makes a full channel sweep slower. KG field-test starting point: 110 ms. 20 ms is experimental and may miss weaker or less frequently heard APs.</div>
+          </div>
+          <div>
+            <label>5 GHz dwell (ms)</label>
+            <select id="wifi5DwellMode" onchange="updateChannelProfileVisibility()">
+              <option value="auto">Auto / scan mode default</option>
+              <option value="custom">Explicit dwell</option>
+            </select>
+            <input id="wifi5DwellInput" class="mt-sm hidden" type="number" min="20" max="1500" step="1" value="100">
+            <div class="field-help">Longer dwell improves capture reliability but slows the full 5 GHz sweep. KG field-test starting point: 100 ms. After validation we will test 60 ms and 40 ms. 20 ms is experimental.</div>
           </div>
         </div>
       </div>
@@ -531,6 +551,7 @@ const WIFI24_RECOMMENDED='1,6,11';
 const WIFI24_ALL='1,2,3,4,5,6,7,8,9,10,11,12,13,14';
 const WIFI5_COMMON='36,40,44,48';
 const WIFI5_ALL='36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165,169,173,177';
+const WIFI_DWELL_RECOMMENDED={wifi24DwellInput:'110',wifi5DwellInput:'100'};
 
 function compactChannels(v){
   return String(v||'').replace(/\s+/g,'');
@@ -574,6 +595,25 @@ function applyLoadedChannelConfig(ch24,ch5){
   updateChannelProfileVisibility();
 }
 
+function setDwellFromConfig(prefix,value){
+  const val=String(value??'').trim();
+  const mode=$(prefix+'DwellMode');
+  const input=$(prefix+'DwellInput');
+  const hidden=$(prefix+'DwellMs');
+  if(hidden)hidden.value=val;
+  if(mode)mode.value=(val===''||val==='0')?'auto':'custom';
+  if(input){
+    if(val!==''&&val!=='0')input.value=val;
+    else input.value=WIFI_DWELL_RECOMMENDED[prefix+'DwellInput'];
+  }
+}
+
+function applyLoadedDwellConfig(d24,d5){
+  setDwellFromConfig('wifi24',d24);
+  setDwellFromConfig('wifi5',d5);
+  updateChannelProfileVisibility();
+}
+
 function channelsFromProfile(band){
   if(band==='24'){
     const sel=$('wifi24Profile')?.value||'recommended';
@@ -595,7 +635,16 @@ function updateChannelProfileVisibility(){
   if(controls)controls.style.display=custom?'grid':'none';
   $('wifi24CustomChannels')?.classList.toggle('hidden',!custom||($('wifi24Profile')?.value!=='custom'));
   $('wifi5CustomChannels')?.classList.toggle('hidden',!custom||($('wifi5Profile')?.value!=='custom'));
+  $('wifi24DwellInput')?.classList.toggle('hidden',!custom||($('wifi24DwellMode')?.value!=='custom'));
+  $('wifi5DwellInput')?.classList.toggle('hidden',!custom||($('wifi5DwellMode')?.value!=='custom'));
   if(!custom)setChannelError('');
+}
+
+function prepareDwellSave(){
+  const d24=($('wifi24DwellMode')?.value||'auto')==='custom'?($('wifi24DwellInput')?.value||'').trim():'';
+  const d5=($('wifi5DwellMode')?.value||'auto')==='custom'?($('wifi5DwellInput')?.value||'').trim():'';
+  if($('wifi24DwellMs'))$('wifi24DwellMs').value=d24;
+  if($('wifi5DwellMs'))$('wifi5DwellMs').value=d5;
 }
 
 function prepareChannelProfileSave(){
@@ -656,6 +705,7 @@ async function loadStatus(){
       }
     }
     applyLoadedChannelConfig(j?.config?.wifi24Channels||'',j?.config?.wifi5Channels||'');
+    applyLoadedDwellConfig(j?.config?.wifi24DwellMs||'',j?.config?.wifi5DwellMs||'');
   }catch(e){console.error('loadStatus',e)}
 }
 
@@ -730,7 +780,8 @@ async function deleteAllLogs(){
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
   if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original all-channel scanning.');
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  prepareDwellSave();
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -942,7 +993,7 @@ static void handleStatus() {
   // Heap allocation: StaticJsonDocument<N> puts N bytes on the Arduino loop
   // task stack (8192 bytes). Even 1024 bytes plus WebServer call chain overhead
   // risks a stack overflow.  DynamicJsonDocument allocates from the heap instead.
-  DynamicJsonDocument doc(2304);
+  DynamicJsonDocument doc(2560);
 
   bool allowScan = scanningEnabled && sdOk && (userScanOverride || !autoPaused);
   doc["scanningEnabled"] = scanningEnabled;
@@ -994,6 +1045,8 @@ static void handleStatus() {
   c["gpsCacheMinutes"] = cfg.gpsCacheMinutes;
   c["wifi24Channels"] = channelListToString(cfg.wifi24Channels, cfg.wifi24ChannelCount);
   c["wifi5Channels"] = channelListToString(cfg.wifi5Channels, cfg.wifi5ChannelCount);
+  c["wifi24DwellMs"] = cfg.wifi24DwellMs > 0 ? String(cfg.wifi24DwellMs) : "";
+  c["wifi5DwellMs"] = cfg.wifi5DwellMs > 0 ? String(cfg.wifi5DwellMs) : "";
   c["scanMode"] = cfg.scanMode;
   c["board"] = cfg.board;
   c["speedUnits"] = cfg.speedUnits;
