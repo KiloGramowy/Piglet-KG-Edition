@@ -103,6 +103,91 @@ static bool parseUint32Strict(const String& raw, uint32_t& out) {
   return true;
 }
 
+static bool isValid5GHzChannel(uint32_t ch) {
+  static const uint8_t valid[] = {
+    36, 40, 44, 48,
+    52, 56, 60, 64,
+    100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
+    149, 153, 157, 161, 165, 169, 173, 177
+  };
+
+  for (uint8_t i = 0; i < (uint8_t)sizeof(valid); i++) {
+    if (ch == valid[i]) return true;
+  }
+  return false;
+}
+
+static bool channelListContains(const uint8_t* channels, uint8_t count, uint8_t ch) {
+  for (uint8_t i = 0; i < count; i++) {
+    if (channels[i] == ch) return true;
+  }
+  return false;
+}
+
+static bool parseChannelListStrict(const String& raw, bool fiveGHz,
+                                   uint8_t* out, uint8_t maxCount,
+                                   uint8_t& outCount) {
+  String s = raw;
+  s.trim();
+  outCount = 0;
+  if (s.length() == 0) return true;
+
+  int pos = 0;
+  while (pos <= s.length()) {
+    int comma = s.indexOf(',', pos);
+    if (comma < 0) comma = s.length();
+
+    String token = s.substring(pos, comma);
+    token.trim();
+    if (token.length() == 0) {
+      outCount = 0;
+      return false;
+    }
+
+    uint32_t value = 0;
+    if (!parseUint32Strict(token, value)) {
+      outCount = 0;
+      return false;
+    }
+
+    bool valid = fiveGHz ? isValid5GHzChannel(value) : (value >= 1 && value <= 14);
+    if (!valid) {
+      outCount = 0;
+      return false;
+    }
+
+    uint8_t ch = (uint8_t)value;
+    if (!channelListContains(out, outCount, ch)) {
+      if (outCount >= maxCount) {
+        outCount = 0;
+        return false;
+      }
+      out[outCount++] = ch;
+    }
+
+    pos = comma + 1;
+    if (comma == s.length()) break;
+  }
+
+  return true;
+}
+
+static void copyChannelList(const uint8_t* src, uint8_t count,
+                            uint8_t* dst, uint8_t& dstCount) {
+  dstCount = count;
+  for (uint8_t i = 0; i < count; i++) {
+    dst[i] = src[i];
+  }
+}
+
+static void writeChannelList(File& f, const uint8_t* channels, uint8_t count) {
+  for (uint8_t i = 0; i < count; i++) {
+    if (i > 0) f.print(",");
+    f.print(channels[i]);
+  }
+  f.println();
+}
+
 void cfgAssignKV(const String& k, const String& v) {
   if (k == "wigleBasicToken") cfg.wigleBasicToken = v;
   else if (k == "homeSsid")   cfg.homeSsid = v;
@@ -123,6 +208,26 @@ void cfgAssignKV(const String& k, const String& v) {
   }
   else if (k == "scanMode") {
     if (v == "aggressive" || v == "powersaving") cfg.scanMode = v;
+  }
+  else if (k == "wifi24Channels") {
+    uint8_t parsed[WIFI24_CHANNEL_MAX_COUNT] = {};
+    uint8_t count = 0;
+    if (parseChannelListStrict(v, false, parsed, WIFI24_CHANNEL_MAX_COUNT, count)) {
+      copyChannelList(parsed, count, cfg.wifi24Channels, cfg.wifi24ChannelCount);
+    } else {
+      cfg.wifi24ChannelCount = 0;
+      Serial.println("[CFG] Invalid wifi24Channels ignored");
+    }
+  }
+  else if (k == "wifi5Channels") {
+    uint8_t parsed[WIFI5_CHANNEL_MAX_COUNT] = {};
+    uint8_t count = 0;
+    if (parseChannelListStrict(v, true, parsed, WIFI5_CHANNEL_MAX_COUNT, count)) {
+      copyChannelList(parsed, count, cfg.wifi5Channels, cfg.wifi5ChannelCount);
+    } else {
+      cfg.wifi5ChannelCount = 0;
+      Serial.println("[CFG] Invalid wifi5Channels ignored");
+    }
   }
   else if (k == "board") {
     String vv = v; vv.toLowerCase();
@@ -203,6 +308,8 @@ bool loadConfigFromSD() {
     Serial.print("      gpsBaud:       "); Serial.println(cfg.gpsBaud);
     Serial.print("      gpsCacheMin:   "); Serial.println(cfg.gpsCacheMinutes);
     Serial.print("      scanMode:      "); Serial.println(cfg.scanMode);
+    Serial.print("      wifi24Ch:      "); Serial.println(cfg.wifi24ChannelCount);
+    Serial.print("      wifi5Ch:       "); Serial.println(cfg.wifi5ChannelCount);
     Serial.print("      wigle token:   "); Serial.println(cfg.wigleBasicToken.length() ? "(set)" : "(empty)");
     return true;
   }
@@ -298,6 +405,12 @@ bool saveConfigToSD() {
 
   f.println("# Scan interval: aggressive (4.5s) or powersaving (12s)");
   f.print("scanMode=");        f.println(cfg.scanMode);
+  f.println("");
+
+  f.println("# Optional solo scan channel lists. Leave empty for original all-channel scanning.");
+  f.println("# wifi24Channels accepts 1-14. wifi5Channels is used only on ESP32-C5.");
+  f.print("wifi24Channels=");  writeChannelList(f, cfg.wifi24Channels, cfg.wifi24ChannelCount);
+  f.print("wifi5Channels=");   writeChannelList(f, cfg.wifi5Channels, cfg.wifi5ChannelCount);
   f.println("");
 
   f.println("# Speed display: kmh or mph");

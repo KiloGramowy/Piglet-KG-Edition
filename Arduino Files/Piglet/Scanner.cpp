@@ -86,6 +86,114 @@ static void processScanResults(int n) {
   Serial.printf("[SCAN] Wrote %lu rows\n", (unsigned long)wrote);
 }
 
+static uint8_t customScanTotalChannels() {
+  uint8_t total = cfg.wifi24ChannelCount;
+  if (wardriverIsC5()) total += cfg.wifi5ChannelCount;
+  return total;
+}
+
+static uint8_t customScanChannelAt(uint8_t idx) {
+  if (idx < cfg.wifi24ChannelCount) return cfg.wifi24Channels[idx];
+  return cfg.wifi5Channels[idx - cfg.wifi24ChannelCount];
+}
+
+static void logCustomScanMode(uint8_t total) {
+  static uint8_t last24 = 255;
+  static uint8_t last5 = 255;
+  static bool lastC5 = false;
+  static bool ignored5Logged = false;
+
+  bool c5 = wardriverIsC5();
+  uint8_t usable5 = c5 ? cfg.wifi5ChannelCount : 0;
+
+  if (!c5 && cfg.wifi5ChannelCount > 0 && !ignored5Logged) {
+    Serial.println("[SCAN] wifi5Channels ignored on non-C5 board");
+    ignored5Logged = true;
+  } else if (c5 || cfg.wifi5ChannelCount == 0) {
+    ignored5Logged = false;
+  }
+
+  if (total > 0 && (cfg.wifi24ChannelCount != last24 || usable5 != last5 || c5 != lastC5)) {
+    Serial.printf("[SCAN] Custom channel scheduler active (2.4=%u, 5=%u)\n",
+                  cfg.wifi24ChannelCount, usable5);
+    last24 = cfg.wifi24ChannelCount;
+    last5 = usable5;
+    lastC5 = c5;
+  }
+}
+
+static void advanceCustomScanChannel(uint8_t& channelIndex, uint8_t total,
+                                     uint32_t& lastCycleCompleteMs) {
+  channelIndex++;
+  if (channelIndex >= total) {
+    channelIndex = 0;
+    lastCycleCompleteMs = millis();
+    Serial.println("[SCAN] Custom channel cycle complete");
+  }
+}
+
+static void recoverCustomScanIfStuck(uint8_t& failureCount) {
+  failureCount++;
+  Serial.printf("[SCAN] Custom scan failed (%u)\n", failureCount);
+  if (failureCount >= 3) {
+    Serial.println("[SCAN] Resetting WiFi radio (custom scan stuck recovery)");
+    WiFi.mode(WIFI_OFF); delay(200);
+    WiFi.mode(WIFI_STA); delay(200);
+    failureCount = 0;
+  }
+}
+
+static void doCustomChannelScan(uint32_t gapMs, uint32_t dwellMs) {
+  static uint32_t lastCycleCompleteMs = 0;
+  static bool     scanInProgress     = false;
+  static uint8_t  channelIndex       = 0;
+  static uint8_t  activeChannel      = 0;
+  static uint8_t  failureCount       = 0;
+
+  uint8_t total = customScanTotalChannels();
+  if (total == 0) return;
+  if (channelIndex >= total) channelIndex = 0;
+
+  logCustomScanMode(total);
+
+  if (scanInProgress) {
+    int n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) return;
+
+    scanInProgress = false;
+
+    if (n == WIFI_SCAN_FAILED || n < 0) {
+      WiFi.scanDelete();
+      recoverCustomScanIfStuck(failureCount);
+      advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs);
+      return;
+    }
+
+    failureCount = 0;
+    Serial.printf("[SCAN] Custom channel %u complete: %d networks\n", activeChannel, n);
+    processScanResults(n);
+    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs);
+    return;
+  }
+
+  if (channelIndex == 0 && millis() - lastCycleCompleteMs < gapMs) return;
+
+  uint8_t channel = customScanChannelAt(channelIndex);
+  int16_t rc = WiFi.scanNetworks(/*async*/true, /*show_hidden*/true,
+                                 /*passive*/false, dwellMs, channel);
+  if (rc == WIFI_SCAN_RUNNING || rc == 0) {
+    activeChannel = channel;
+    scanInProgress = true;
+    Serial.printf("[SCAN] Custom channel scan started (ch=%u, dwell=%lu ms)\n",
+                  channel, (unsigned long)dwellMs);
+  } else {
+    WiFi.scanDelete();
+    Serial.printf("[SCAN] Custom channel %u start failed (%d)\n", channel, rc);
+    recoverCustomScanIfStuck(failureCount);
+    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs);
+  }
+}
+
 void doScanOnce() {
   static uint32_t lastScanStartMs  = 0;
   static bool     scanInProgress   = false;
@@ -102,6 +210,11 @@ void doScanOnce() {
   bool powersave     = (cfg.scanMode == "powersaving");
   uint32_t gapMs     = powersave ? 10000 : 1500;
   uint32_t dwellMs   = powersave ?   200 :  100;
+
+  if (customScanTotalChannels() > 0) {
+    doCustomChannelScan(gapMs, dwellMs);
+    return;
+  }
 
   // ---- Check if the async scan launched last iteration has finished ----
   if (scanInProgress) {
