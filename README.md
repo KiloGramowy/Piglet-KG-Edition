@@ -1,26 +1,50 @@
 
-# Piglet Wardriver
+# Piglet KG Edition
 
-**Piglet** is an open-source ESP32-based wardriving platform that scans nearby Wi-Fi networks, records GPS position, saves WiGLE-compatible CSV logs to SD, and provides a real-time web UI for control, uploads, and device status.
+**Piglet KG Edition** is an ESP32-C5-focused, field-tested fork of Piglet by
+KiloGramowy.
 
-Designed for **[Seeed XIAO ESP32-S3](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/), [XIAO ESP32-C5](https://wiki.seeedstudio.com/xiao_esp32c5_getting_started/), [XIAO ESP32-C6](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/), and [XIAO ESP32-C3](https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/)**, Piglet focuses on:
+This repository is a direct fork of the original
+[Hamspiced/piglet](https://github.com/Hamspiced/piglet) project. KG Edition is
+focused on incremental, field-tested improvements for mobile wardriving, GPS
+resilience, Wi-Fi scanning performance, and future Wi-Fi/BLE tuning. The primary
+hardware target for KG-specific tuning is the
+[Seeed Studio XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html).
 
-- Reliable scanning while in motion  
-- Clean WiGLE-ready data collection  
-- Simple field deployment  
-- Fully hackable open firmware
+KG Edition is not intended to replace upstream Piglet. The goal is to keep the
+original Piglet identity and compatibility where practical while developing
+small, reviewable improvements that can be tested on real hardware.
 
+Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet)
 
-## Piglet KG Edition
+## KG Edition Status
 
-**Piglet KG Edition** is an ESP32-C5-focused experimental fork of Piglet by
-KiloGramowy. It keeps the original Piglet identity and codebase as its base
-while exploring field-tested improvements for mobile wardriving, GPS
-resilience, Wi-Fi scanning performance, and future Wi-Fi/BLE tuning.
+Currently implemented:
 
-KG Edition is not a replacement for Piglet. It is a focused development branch
-that stays compatible with the original project where practical and keeps
-changes small enough to review, test, and, where useful, propose upstream.
+- ✅ Configurable GPS cache timeout
+
+Under development / roadmap:
+
+- 🧪 Configurable ESP32-C5 2.4 GHz channel selection
+- 🧪 Configurable ESP32-C5 5 GHz channel selection
+- 🧪 Configurable Wi-Fi dwell timing
+- 🧪 ESP32-C5 mobile wardriving scan-profile tuning
+- 🧪 BLE / Wi-Fi coexistence and BLE scan timing
+
+Only the GPS cache timeout is currently implemented. Stage 2 scanning controls
+and BLE tuning are roadmap items, not completed features.
+
+## Current KG Configuration
+
+For the current KG GPS field-testing profile, add this line to `/wardriver.cfg`:
+
+```ini
+gpsCacheMinutes=720
+```
+
+This keeps the last valid GPS coordinates available for up to 720 minutes
+(12 hours) after the current GPS fix is lost. This is a KG Edition
+recommendation, not an upstream Piglet default.
 
 ## KG Edition Changes
 
@@ -29,7 +53,7 @@ changes small enough to review, test, and, where useful, propose upstream.
 KG Edition currently adds one completed KG-specific feature: configurable reuse
 of the last valid GPS coordinates after the current GPS fix is lost.
 
-New `/wardriver.cfg` key:
+Configuration key:
 
 ```ini
 gpsCacheMinutes=3
@@ -47,17 +71,6 @@ gpsCacheMinutes=3
 
 Long GPS cache periods can associate detections with an older location if the
 device continues moving while GPS remains unavailable.
-
-## KG Recommended GPS Profile
-
-The current KG recommended GPS cache profile for field testing is:
-
-```ini
-gpsCacheMinutes=720
-```
-
-This is a KG Edition recommendation for mobile testing, not an upstream Piglet
-default.
 
 ## KG Edition Roadmap
 
@@ -89,6 +102,21 @@ KG Edition changes are developed incrementally: one focused feature at a time,
 with source review first, compile/test where possible, real XIAO ESP32-C5
 hardware validation, and field log comparison. Stable, useful improvements may
 later be proposed upstream.
+
+## Original Piglet Documentation
+
+The original Piglet project documentation is preserved below.
+
+## Piglet Wardriver
+
+**Piglet** is an open-source ESP32-based wardriving platform that scans nearby Wi-Fi networks, records GPS position, saves WiGLE-compatible CSV logs to SD, and provides a real-time web UI for control, uploads, and device status.
+
+Designed for **[Seeed XIAO ESP32-S3](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/), [XIAO ESP32-C5](https://wiki.seeedstudio.com/xiao_esp32c5_getting_started/), [XIAO ESP32-C6](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/), and [XIAO ESP32-C3](https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/)**, Piglet focuses on:
+
+- Reliable scanning while in motion
+- Clean WiGLE-ready data collection
+- Simple field deployment
+- Fully hackable open firmware
 
 
 ## Features
