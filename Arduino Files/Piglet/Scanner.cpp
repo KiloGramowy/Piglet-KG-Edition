@@ -143,7 +143,21 @@ static void recoverCustomScanIfStuck(uint8_t& failureCount) {
   }
 }
 
-static void doCustomChannelScan(uint32_t gapMs, uint32_t dwellMs) {
+static uint32_t customDwellForChannel(uint8_t channel, uint32_t defaultDwellMs) {
+  if (channel >= 1 && channel <= 14 &&
+      cfg.wifi24DwellMs >= WIFI_DWELL_MIN_MS &&
+      cfg.wifi24DwellMs <= WIFI_DWELL_MAX_MS) {
+    return cfg.wifi24DwellMs;
+  }
+  if (channel > 14 &&
+      cfg.wifi5DwellMs >= WIFI_DWELL_MIN_MS &&
+      cfg.wifi5DwellMs <= WIFI_DWELL_MAX_MS) {
+    return cfg.wifi5DwellMs;
+  }
+  return defaultDwellMs;
+}
+
+static void doCustomChannelScan(uint32_t gapMs, uint32_t defaultDwellMs) {
   static uint32_t lastCycleCompleteMs = 0;
   static bool     scanInProgress     = false;
   static uint8_t  channelIndex       = 0;
@@ -179,6 +193,7 @@ static void doCustomChannelScan(uint32_t gapMs, uint32_t dwellMs) {
   if (channelIndex == 0 && millis() - lastCycleCompleteMs < gapMs) return;
 
   uint8_t channel = customScanChannelAt(channelIndex);
+  uint32_t dwellMs = customDwellForChannel(channel, defaultDwellMs);
   int16_t rc = WiFi.scanNetworks(/*async*/true, /*show_hidden*/true,
                                  /*passive*/false, dwellMs, channel);
   if (rc == WIFI_SCAN_RUNNING || rc == 0) {

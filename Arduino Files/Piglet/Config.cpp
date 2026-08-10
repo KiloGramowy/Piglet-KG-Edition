@@ -103,6 +103,26 @@ static bool parseUint32Strict(const String& raw, uint32_t& out) {
   return true;
 }
 
+static bool parseDwellMs(const String& raw, uint16_t& out) {
+  String s = raw;
+  s.trim();
+  if (s.length() == 0) {
+    out = 0;
+    return true;
+  }
+
+  uint32_t value = 0;
+  if (!parseUint32Strict(s, value)) return false;
+  if (value == 0) {
+    out = 0;
+    return true;
+  }
+  if (value < WIFI_DWELL_MIN_MS || value > WIFI_DWELL_MAX_MS) return false;
+
+  out = (uint16_t)value;
+  return true;
+}
+
 static bool isValid5GHzChannel(uint32_t ch) {
   static const uint8_t valid[] = {
     36, 40, 44, 48,
@@ -229,6 +249,24 @@ void cfgAssignKV(const String& k, const String& v) {
       Serial.println("[CFG] Invalid wifi5Channels ignored");
     }
   }
+  else if (k == "wifi24DwellMs") {
+    uint16_t dwell = 0;
+    if (parseDwellMs(v, dwell)) {
+      cfg.wifi24DwellMs = dwell;
+    } else {
+      cfg.wifi24DwellMs = 0;
+      Serial.println("[CFG] Invalid wifi24DwellMs ignored");
+    }
+  }
+  else if (k == "wifi5DwellMs") {
+    uint16_t dwell = 0;
+    if (parseDwellMs(v, dwell)) {
+      cfg.wifi5DwellMs = dwell;
+    } else {
+      cfg.wifi5DwellMs = 0;
+      Serial.println("[CFG] Invalid wifi5DwellMs ignored");
+    }
+  }
   else if (k == "board") {
     String vv = v; vv.toLowerCase();
     if (vv == "auto" || vv == "s3" || vv == "exp" || vv == "c5" || vv == "c6" || vv == "c3") cfg.board = vv;
@@ -310,6 +348,12 @@ bool loadConfigFromSD() {
     Serial.print("      scanMode:      "); Serial.println(cfg.scanMode);
     Serial.print("      wifi24Ch:      "); Serial.println(cfg.wifi24ChannelCount);
     Serial.print("      wifi5Ch:       "); Serial.println(cfg.wifi5ChannelCount);
+    Serial.print("      wifi24Dwell:   ");
+    if (cfg.wifi24DwellMs > 0) Serial.println(cfg.wifi24DwellMs);
+    else Serial.println("auto");
+    Serial.print("      wifi5Dwell:    ");
+    if (cfg.wifi5DwellMs > 0) Serial.println(cfg.wifi5DwellMs);
+    else Serial.println("auto");
     Serial.print("      wigle token:   "); Serial.println(cfg.wigleBasicToken.length() ? "(set)" : "(empty)");
     return true;
   }
@@ -411,6 +455,16 @@ bool saveConfigToSD() {
   f.println("# wifi24Channels accepts 1-14. wifi5Channels is used only on ESP32-C5.");
   f.print("wifi24Channels=");  writeChannelList(f, cfg.wifi24Channels, cfg.wifi24ChannelCount);
   f.print("wifi5Channels=");   writeChannelList(f, cfg.wifi5Channels, cfg.wifi5ChannelCount);
+  f.println("");
+
+  f.println("# Optional per-band dwell for custom channel scanning only.");
+  f.println("# Valid range: 20-1500 ms. Empty or 0 = scanMode default.");
+  f.print("wifi24DwellMs=");
+  if (cfg.wifi24DwellMs > 0) f.println(cfg.wifi24DwellMs);
+  else f.println();
+  f.print("wifi5DwellMs=");
+  if (cfg.wifi5DwellMs > 0) f.println(cfg.wifi5DwellMs);
+  else f.println();
   f.println("");
 
   f.println("# Speed display: kmh or mph");
