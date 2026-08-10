@@ -32,6 +32,7 @@
 #include "Display.h"
 #include "WiFiManager.h"
 #include "Scanner.h"
+#include "BleScanner.h"
 #include "WigleUpload.h"
 #include "WebUI.h"
 #include "MeshNode.h"
@@ -46,6 +47,7 @@ static void enterDeepSleep() {
   Serial.println("[SLEEP] Long press detected – entering deep sleep...");
 
   // Flush & close the active CSV log
+  bleScannerStop();
   closeLogFile();
 
   // Disconnect WiFi cleanly
@@ -103,6 +105,7 @@ static void onPageChange(uint8_t oldPage, uint8_t newPage) {
   }
 
   // Mesh node page lifecycle — always enter as Node; long-press activates Core
+  if (newPage == 3 || newPage == 5) bleScannerStop();
   if (newPage == 5) enterNodeMode();
   if (oldPage == 5) {
     if (meshCoreActive) exitCoreMode();
@@ -194,6 +197,59 @@ static void pollButton() {
   }
 }
 
+static void drainBlePendingToLog() {
+  if (!cfg.bleEnabled || !sdOk || !logFile || !bleScannerHasPending()) return;
+
+  GpsLogSnapshot gpsSnap = captureGpsLogSnapshot();
+  String firstSeen = iso8601NowUTC();
+  uint16_t wrote = 0;
+
+  BleObservation obs;
+  while (bleScannerConsume(obs)) {
+    appendBleRow(obs, firstSeen,
+                 gpsSnap.lat, gpsSnap.lon, gpsSnap.altM, gpsSnap.accM);
+    wrote++;
+  }
+
+  if (wrote > 0 && logFile) {
+    logFile.flush();
+    Serial.printf("[BLE] Wrote %u row(s)%s%s\n",
+                  wrote,
+                  gpsSnap.usedFix ? " (GPS fix)" : "",
+                  gpsSnap.usedCache ? " (GPS cache)" : "");
+  }
+}
+
+static void serviceBleLifecycle(bool allowScan) {
+  if (!cfg.bleEnabled) {
+    if (bleScannerIsScanning()) bleScannerStop();
+    return;
+  }
+
+  bleScannerTick();
+  if (!allowScan && bleScannerIsScanning()) {
+    Serial.println("[BLE] Stopping burst because wardriving is paused");
+    bleScannerStop();
+  }
+  drainBlePendingToLog();
+}
+
+static void maybeStartBleAfterWifiCycle(uint32_t completedCycles) {
+  static uint32_t lastBleCycle = 0;
+
+  if (!cfg.bleEnabled || !sdOk || completedCycles == 0) return;
+  if (bleScannerIsScanning()) return;
+  if ((completedCycles - lastBleCycle) < cfg.bleEveryNCycles) return;
+  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return;
+
+  if (bleScannerStartBurst()) {
+    lastBleCycle = completedCycles;
+  } else {
+    lastBleCycle = completedCycles;
+    Serial.println("[BLE] Burst skipped after Wi-Fi cycle");
+  }
+}
+
 // ================================================================
 //  setup()
 // ================================================================
@@ -210,6 +266,7 @@ void setup() {
 
   networksFound2G = 0;
   networksFound5G = 0;
+  bleUniqueCount = 0;
 
   // --- Bootstrap pins by chip so we can bring up SD and read config ---
   pins = detectPinsByChip();
@@ -713,8 +770,17 @@ void loop() {
     }
     allowScanForOled = allowScan;
 
+    serviceBleLifecycle(allowScan);
+
     if (allowScan) {
-      doScanOnce();
+      if (!bleScannerIsScanning()) {
+        uint32_t cyclesBefore = wifiScanCompletedCycles();
+        doScanOnce();
+        uint32_t cyclesAfter = wifiScanCompletedCycles();
+        if (cyclesAfter != cyclesBefore) {
+          maybeStartBleAfterWifiCycle(cyclesAfter);
+        }
+      }
     }
   }
 

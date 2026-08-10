@@ -27,6 +27,7 @@ static String authModeToString(wifi_auth_mode_t m) {
 bool     lastGpsValid   = false;
 double   lastLat = 0, lastLon = 0, lastAlt = 0, lastAcc = 0;
 uint32_t lastGpsValidMs = 0;          // millis() when position was last cached
+static uint32_t completedWifiCycles = 0;
 
 static uint32_t gpsCacheTimeoutMs() {
   uint32_t minutes = cfg.gpsCacheMinutes;
@@ -35,6 +36,28 @@ static uint32_t gpsCacheTimeoutMs() {
 
   uint64_t ms = (uint64_t)minutes * 60ULL * 1000ULL;
   return (ms > 4294967295ULL) ? 4294967295UL : (uint32_t)ms;
+}
+
+uint32_t wifiScanCompletedCycles() {
+  return completedWifiCycles;
+}
+
+GpsLogSnapshot captureGpsLogSnapshot() {
+  GpsLogSnapshot snap;
+  if (gpsHasFix) {
+    snap.lat = gps.location.lat();
+    snap.lon = gps.location.lng();
+    snap.altM = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
+    snap.accM = gps.hdop.isValid() ? gps.hdop.hdop() : 0.0;
+    snap.usedFix = true;
+  } else if (lastGpsValid && (millis() - lastGpsValidMs) <= gpsCacheTimeoutMs()) {
+    snap.lat = lastLat;
+    snap.lon = lastLon;
+    snap.altM = lastAlt;
+    snap.accM = lastAcc;
+    snap.usedCache = true;
+  }
+  return snap;
 }
 
 // ---- Result processor (shared between sync and async paths) ----
@@ -123,11 +146,13 @@ static void logCustomScanMode(uint8_t total) {
 }
 
 static void advanceCustomScanChannel(uint8_t& channelIndex, uint8_t total,
-                                     uint32_t& lastCycleCompleteMs) {
+                                     uint32_t& lastCycleCompleteMs,
+                                     bool countCompletedCycle) {
   channelIndex++;
   if (channelIndex >= total) {
     channelIndex = 0;
     lastCycleCompleteMs = millis();
+    if (countCompletedCycle) completedWifiCycles++;
     Serial.println("[SCAN] Custom channel cycle complete");
   }
 }
@@ -179,14 +204,14 @@ static void doCustomChannelScan(uint32_t gapMs, uint32_t defaultDwellMs) {
     if (n == WIFI_SCAN_FAILED || n < 0) {
       WiFi.scanDelete();
       recoverCustomScanIfStuck(failureCount);
-      advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs);
+      advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs, false);
       return;
     }
 
     failureCount = 0;
     Serial.printf("[SCAN] Custom channel %u complete: %d networks\n", activeChannel, n);
     processScanResults(n);
-    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs);
+    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs, true);
     return;
   }
 
@@ -205,7 +230,7 @@ static void doCustomChannelScan(uint32_t gapMs, uint32_t defaultDwellMs) {
     WiFi.scanDelete();
     Serial.printf("[SCAN] Custom channel %u start failed (%d)\n", channel, rc);
     recoverCustomScanIfStuck(failureCount);
-    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs);
+    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs, false);
   }
 }
 
@@ -255,6 +280,7 @@ void doScanOnce() {
     zeroScanCount = 0;
     Serial.printf("[SCAN] Async complete: %d networks\n", n);
     processScanResults(n);
+    completedWifiCycles++;
     return;
   }
 

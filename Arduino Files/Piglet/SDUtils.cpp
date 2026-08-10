@@ -1,4 +1,5 @@
 #include "SDUtils.h"
+#include "BleCsv.h"
 #include "Globals.h"
 
 // ---- Path helpers ----
@@ -292,6 +293,56 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   }
 
   // Flush less often to avoid stalls (SD writes can block hard)
+  static uint32_t lastFlushMs = 0;
+  static uint32_t linesSinceFlush = 0;
+
+  linesSinceFlush++;
+
+  uint32_t nowMs = millis();
+  if (linesSinceFlush >= 25 || (nowMs - lastFlushMs) >= 2000) {
+    logFile.flush();
+    lastFlushMs = nowMs;
+    linesSinceFlush = 0;
+  }
+}
+
+void appendBleRow(const BleObservation& obs, const String& firstSeen,
+                  double lat, double lon, double altM, double accM) {
+  if (!sdOk || !logFile) return;
+
+  if (csvRowCount >= CSV_MAX_ROWS) {
+    Serial.println("[SD] CSV row limit reached, rotating log file");
+    closeLogFile();
+    if (!openLogFile()) return;
+  }
+
+  String line = formatBleWigleRow(obs.addr, obs.addrType, obs.name, firstSeen,
+                                  obs.channel, obs.rssi,
+                                  lat, lon, altM, accM,
+                                  obs.serviceUuids, obs.mfgrId);
+
+  size_t written = logFile.println(line);
+  csvRowCount++;
+
+  if (written == 0 && line.length() > 0) {
+    static uint8_t consecFails = 0;
+    consecFails++;
+    Serial.printf("[SD] BLE write failed (%u consecutive)\n", consecFails);
+    if (consecFails >= 3) {
+      Serial.println("[SD] Attempting log reopen...");
+      closeLogFile();
+      if (openLogFile()) {
+        Serial.println("[SD] Reopen OK - retrying BLE write");
+        logFile.println(line);
+        consecFails = 0;
+      } else {
+        Serial.println("[SD] Reopen FAILED - SD marked unusable");
+        sdOk = false;
+      }
+    }
+    return;
+  }
+
   static uint32_t lastFlushMs = 0;
   static uint32_t linesSinceFlush = 0;
 

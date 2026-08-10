@@ -9,6 +9,12 @@ static const uint8_t WIFI24_CHANNEL_MAX_COUNT   = 14;
 static const uint8_t WIFI5_CHANNEL_MAX_COUNT    = 28;
 static const uint16_t WIFI_DWELL_MIN_MS         = 20;
 static const uint16_t WIFI_DWELL_MAX_MS         = 1500;
+static const uint16_t BLE_SCAN_DURATION_DEFAULT_MS = 1000;
+static const uint16_t BLE_SCAN_DURATION_MIN_MS     = 250;
+static const uint16_t BLE_SCAN_DURATION_MAX_MS     = 5000;
+static const uint16_t BLE_EVERY_N_CYCLES_DEFAULT  = 5;
+static const uint16_t BLE_EVERY_N_CYCLES_MIN      = 1;
+static const uint16_t BLE_EVERY_N_CYCLES_MAX      = 100;
 
 struct Config {
   String wigleBasicToken;
@@ -25,6 +31,9 @@ struct Config {
   uint8_t wifi5Channels[WIFI5_CHANNEL_MAX_COUNT] = {};
   uint16_t wifi24DwellMs = 0; // 0 = use scanMode-derived dwell
   uint16_t wifi5DwellMs = 0;  // 0 = use scanMode-derived dwell
+  bool bleEnabled = false;
+  uint16_t bleScanDurationMs = BLE_SCAN_DURATION_DEFAULT_MS;
+  uint16_t bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
   String board = "auto"; // auto | s3 | c5 | c6 | c3 | exp  (pins selected at boot; reboot required after change)
   String speedUnits  = "kmh"; // kmh | mph
   int battPin        = -1;    // GPIO for battery voltage ADC (-1 = disabled). Expects 1:2 voltage divider from LiPo.
