@@ -340,6 +340,11 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         <input id="deviceName" placeholder="e.g. rover1 &mdash; identifies this device in WiGLE uploads (optional)">
       </div>
       <div><label>GPS Baud Rate</label><input id="gpsBaud" type="number" value="9600"></div>
+      <div>
+        <label>GPS cache duration (minutes)</label>
+        <input id="gpsCacheMinutes" type="number" value="3" min="1" max="10080" step="1">
+        <div class="muted" style="font-size:12px;margin-top:5px;line-height:1.35">How long Piglet may reuse the last valid GPS position after GPS fix is lost. Default: 3 minutes. KG field-testing profile: 720 minutes / 12 hours. Long values may associate detections with an older position if the device keeps moving while GPS is unavailable.</div>
+      </div>
       <div><label>Home SSID</label><input id="homeSsid" placeholder="Your home Wi-Fi"></div>
       <div><label>Home PSK</label><input id="homePsk" type="password" placeholder="Password"></div>
       <div><label>Wardriver SSID</label><input id="wardriverSsid"></div>
@@ -507,7 +512,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -588,7 +593,7 @@ async function deleteAllLogs(){
 
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -840,6 +845,7 @@ static void handleStatus() {
   c["wardriverSsid"] = cfg.wardriverSsid;
   c["wardriverPsk"] = cfg.wardriverPsk;
   c["gpsBaud"] = cfg.gpsBaud;
+  c["gpsCacheMinutes"] = cfg.gpsCacheMinutes;
   c["scanMode"] = cfg.scanMode;
   c["board"] = cfg.board;
   c["speedUnits"] = cfg.speedUnits;
