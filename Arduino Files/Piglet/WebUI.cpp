@@ -13,7 +13,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Piglet Wardriver</title>
+  <title>Piglet KG Edition</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f437;</text></svg>">
 <style>
   *,*::before,*::after{box-sizing:border-box}
@@ -107,6 +107,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     border-color:var(--accent);
     box-shadow:0 0 0 3px var(--accentDim);
   }
+  input:disabled,select:disabled{opacity:.72;cursor:not-allowed}
   input::placeholder{color:var(--muted);opacity:.6}
 
   label{
@@ -260,8 +261,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <div class="header">
     <div class="logo">&#x1f437;</div>
     <div>
-      <h1>Piglet Wardriver</h1>
-<p class="sub">ESP32 Wi-Fi Scanner &amp; Logger &mdash; v2.51</p>
+      <h1>Piglet KG Edition</h1>
+<p class="sub">XIAO ESP32-C5 Wardriver &bull; based on Piglet v2.58</p>
     </div>
   </div>
 
@@ -363,20 +364,23 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       </div>
       <div class="inner-card cfg-section">
         <h4>Scanning (Solo)</h4>
-        <div class="cfg-help">Channel profiles trade scan speed for coverage. KG Recommended profiles are starting points for field testing. Original mode preserves Piglet's normal all-channel scanner.</div>
+        <div class="cfg-help">Choose how Piglet scans Wi-Fi. Original keeps the standard all-channel behavior. KG Recommended uses the XIAO ESP32-C5 profile validated during KG field testing. Custom gives full control over channels and dwell.</div>
         <input id="wifi24Channels" type="hidden">
         <input id="wifi5Channels" type="hidden">
         <input id="wifi24DwellMs" type="hidden">
         <input id="wifi5DwellMs" type="hidden">
         <div class="cfg-grid">
           <div>
-            <label>Channel scanning mode</label>
+            <label>Scanning profile</label>
             <select id="channelScanMode" onchange="updateChannelProfileVisibility()">
-              <option value="original">Original all-channel scanning (default)</option>
-              <option value="custom">Custom channel profiles</option>
+              <option value="original">Original Piglet</option>
+              <option value="kg">KG Recommended</option>
+              <option value="custom">Custom</option>
             </select>
+            <div class="field-help">Original Piglet uses Piglet's normal all-channel scan behavior. KG Recommended uses the hardware-tested XIAO ESP32-C5 starting profile: 2.4 GHz 1/6/11, 5 GHz 36/40/44/48, dwell 110 ms / 100 ms. Custom allows manual channel and dwell selection.</div>
+            <div id="scanProfileStateHelp" class="field-help"></div>
           </div>
-          <div id="channelProfileError" class="scan-error">Choose at least one channel profile, or switch back to Original all-channel scanning.</div>
+          <div id="channelProfileError" class="scan-error">Choose at least one channel profile, or switch back to Original Piglet.</div>
         </div>
         <div id="soloProfileControls" class="cfg-grid">
           <div>
@@ -551,7 +555,14 @@ const WIFI24_RECOMMENDED='1,6,11';
 const WIFI24_ALL='1,2,3,4,5,6,7,8,9,10,11,12,13,14';
 const WIFI5_COMMON='36,40,44,48';
 const WIFI5_ALL='36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165,169,173,177';
-const WIFI_DWELL_RECOMMENDED={wifi24DwellInput:'110',wifi5DwellInput:'100'};
+const WIFI24_DWELL_RECOMMENDED='110';
+const WIFI5_DWELL_RECOMMENDED='100';
+const WIFI_DWELL_RECOMMENDED={wifi24DwellInput:WIFI24_DWELL_RECOMMENDED,wifi5DwellInput:WIFI5_DWELL_RECOMMENDED};
+const SCAN_PROFILE_HELP={
+  original:'Switch to KG Recommended or Custom to configure channel selection and dwell.',
+  kg:'KG Recommended writes the hardware-tested starting profile: 2.4 GHz 1/6/11 at 110 ms and 5 GHz 36/40/44/48 at 100 ms.',
+  custom:'Custom enables manual channel and dwell controls. Choose at least one band before saving.'
+};
 
 function compactChannels(v){
   return String(v||'').replace(/\s+/g,'');
@@ -583,18 +594,6 @@ function setProfileFromChannels(band,value){
   }
 }
 
-function applyLoadedChannelConfig(ch24,ch5){
-  const v24=compactChannels(ch24);
-  const v5=compactChannels(ch5);
-  const mode=$('channelScanMode');
-  if(mode)mode.value=(v24===''&&v5==='')?'original':'custom';
-  if($('wifi24Channels'))$('wifi24Channels').value=v24;
-  if($('wifi5Channels'))$('wifi5Channels').value=v5;
-  setProfileFromChannels('24',v24);
-  setProfileFromChannels('5',v5);
-  updateChannelProfileVisibility();
-}
-
 function setDwellFromConfig(prefix,value){
   const val=String(value??'').trim();
   const mode=$(prefix+'DwellMode');
@@ -608,9 +607,43 @@ function setDwellFromConfig(prefix,value){
   }
 }
 
-function applyLoadedDwellConfig(d24,d5){
-  setDwellFromConfig('wifi24',d24);
-  setDwellFromConfig('wifi5',d5);
+function applyOriginalProfileValues(){
+  if($('wifi24Profile'))$('wifi24Profile').value='off';
+  if($('wifi5Profile'))$('wifi5Profile').value='off';
+  setDwellFromConfig('wifi24','');
+  setDwellFromConfig('wifi5','');
+  if($('wifi24Channels'))$('wifi24Channels').value='';
+  if($('wifi5Channels'))$('wifi5Channels').value='';
+}
+
+function applyKgRecommendedProfileValues(){
+  if($('wifi24Profile'))$('wifi24Profile').value='recommended';
+  if($('wifi5Profile'))$('wifi5Profile').value='common';
+  setDwellFromConfig('wifi24',WIFI24_DWELL_RECOMMENDED);
+  setDwellFromConfig('wifi5',WIFI5_DWELL_RECOMMENDED);
+  if($('wifi24Channels'))$('wifi24Channels').value=WIFI24_RECOMMENDED;
+  if($('wifi5Channels'))$('wifi5Channels').value=WIFI5_COMMON;
+}
+
+function applyLoadedScanProfileConfig(ch24,ch5,d24,d5){
+  const v24=compactChannels(ch24);
+  const v5=compactChannels(ch5);
+  const d24v=String(d24??'').trim();
+  const d5v=String(d5??'').trim();
+  const mode=$('channelScanMode');
+
+  if($('wifi24Channels'))$('wifi24Channels').value=v24;
+  if($('wifi5Channels'))$('wifi5Channels').value=v5;
+  setProfileFromChannels('24',v24);
+  setProfileFromChannels('5',v5);
+  setDwellFromConfig('wifi24',d24v);
+  setDwellFromConfig('wifi5',d5v);
+
+  if(mode){
+    if(v24===''&&v5==='')mode.value='original';
+    else if(v24===WIFI24_RECOMMENDED&&v5===WIFI5_COMMON&&d24v===WIFI24_DWELL_RECOMMENDED&&d5v===WIFI5_DWELL_RECOMMENDED)mode.value='kg';
+    else mode.value='custom';
+  }
   updateChannelProfileVisibility();
 }
 
@@ -630,19 +663,40 @@ function channelsFromProfile(band){
 }
 
 function updateChannelProfileVisibility(){
-  const custom=($('channelScanMode')?.value||'original')==='custom';
+  const profile=$('channelScanMode')?.value||'original';
+  const custom=profile==='custom';
+  const kg=profile==='kg';
+  const original=profile==='original';
   const controls=$('soloProfileControls');
-  if(controls)controls.style.display=custom?'grid':'none';
+  if(controls)controls.style.display='grid';
+  if(original)applyOriginalProfileValues();
+  if(kg)applyKgRecommendedProfileValues();
+
+  for(const id of ['wifi24Profile','wifi5Profile','wifi24CustomChannels','wifi5CustomChannels','wifi24DwellMode','wifi24DwellInput','wifi5DwellMode','wifi5DwellInput']){
+    const el=$(id);
+    if(el)el.disabled=!custom;
+  }
+
   $('wifi24CustomChannels')?.classList.toggle('hidden',!custom||($('wifi24Profile')?.value!=='custom'));
   $('wifi5CustomChannels')?.classList.toggle('hidden',!custom||($('wifi5Profile')?.value!=='custom'));
-  $('wifi24DwellInput')?.classList.toggle('hidden',!custom||($('wifi24DwellMode')?.value!=='custom'));
-  $('wifi5DwellInput')?.classList.toggle('hidden',!custom||($('wifi5DwellMode')?.value!=='custom'));
+  $('wifi24DwellInput')?.classList.toggle('hidden',!(kg||(custom&&($('wifi24DwellMode')?.value==='custom'))));
+  $('wifi5DwellInput')?.classList.toggle('hidden',!(kg||(custom&&($('wifi5DwellMode')?.value==='custom'))));
+  const help=$('scanProfileStateHelp');
+  if(help)help.textContent=SCAN_PROFILE_HELP[profile]||'';
   if(!custom)setChannelError('');
 }
 
 function prepareDwellSave(){
-  const d24=($('wifi24DwellMode')?.value||'auto')==='custom'?($('wifi24DwellInput')?.value||'').trim():'';
-  const d5=($('wifi5DwellMode')?.value||'auto')==='custom'?($('wifi5DwellInput')?.value||'').trim():'';
+  const profile=$('channelScanMode')?.value||'original';
+  let d24='';
+  let d5='';
+  if(profile==='kg'){
+    d24=WIFI24_DWELL_RECOMMENDED;
+    d5=WIFI5_DWELL_RECOMMENDED;
+  }else if(profile==='custom'){
+    d24=($('wifi24DwellMode')?.value||'auto')==='custom'?($('wifi24DwellInput')?.value||'').trim():'';
+    d5=($('wifi5DwellMode')?.value||'auto')==='custom'?($('wifi5DwellInput')?.value||'').trim():'';
+  }
   if($('wifi24DwellMs'))$('wifi24DwellMs').value=d24;
   if($('wifi5DwellMs'))$('wifi5DwellMs').value=d5;
 }
@@ -651,11 +705,14 @@ function prepareChannelProfileSave(){
   const mode=$('channelScanMode')?.value||'original';
   let ch24='';
   let ch5='';
-  if(mode==='custom'){
+  if(mode==='kg'){
+    ch24=WIFI24_RECOMMENDED;
+    ch5=WIFI5_COMMON;
+  }else if(mode==='custom'){
     ch24=channelsFromProfile('24');
     ch5=channelsFromProfile('5');
     if(ch24.trim()===''&&ch5.trim()===''){
-      setChannelError('Choose at least one channel profile, or switch back to Original all-channel scanning.');
+      setChannelError('Choose at least one channel profile, or switch back to Original Piglet.');
       return false;
     }
   }
@@ -704,8 +761,12 @@ async function loadStatus(){
         if(el)el.value=v;
       }
     }
-    applyLoadedChannelConfig(j?.config?.wifi24Channels||'',j?.config?.wifi5Channels||'');
-    applyLoadedDwellConfig(j?.config?.wifi24DwellMs||'',j?.config?.wifi5DwellMs||'');
+    applyLoadedScanProfileConfig(
+      j?.config?.wifi24Channels||'',
+      j?.config?.wifi5Channels||'',
+      j?.config?.wifi24DwellMs||'',
+      j?.config?.wifi5DwellMs||''
+    );
   }catch(e){console.error('loadStatus',e)}
 }
 
@@ -779,7 +840,7 @@ async function deleteAllLogs(){
 
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
-  if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original all-channel scanning.');
+  if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original Piglet.');
   prepareDwellSave();
   const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
