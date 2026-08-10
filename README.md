@@ -11,6 +11,86 @@ Designed for **[Seeed XIAO ESP32-S3](https://wiki.seeedstudio.com/xiao_esp32s3_g
 - Fully hackable open firmware
 
 
+## Piglet KG Edition
+
+**Piglet KG Edition** is an ESP32-C5-focused experimental fork of Piglet by
+KiloGramowy. It keeps the original Piglet identity and codebase as its base
+while exploring field-tested improvements for mobile wardriving, GPS
+resilience, Wi-Fi scanning performance, and future Wi-Fi/BLE tuning.
+
+KG Edition is not a replacement for Piglet. It is a focused development branch
+that stays compatible with the original project where practical and keeps
+changes small enough to review, test, and, where useful, propose upstream.
+
+## KG Edition Changes
+
+### Configurable GPS cache timeout
+
+KG Edition currently adds one completed KG-specific feature: configurable reuse
+of the last valid GPS coordinates after the current GPS fix is lost.
+
+New `/wardriver.cfg` key:
+
+```ini
+gpsCacheMinutes=3
+```
+
+- Default: `3` minutes
+- KG recommended configuration: `gpsCacheMinutes=720`
+- `720` minutes = 12 hours
+- Valid range: `1..10080` minutes
+- If the current GPS fix is lost, Piglet may continue using the last valid GPS
+  coordinates for the configured duration.
+- When the configured cache expires, normal fallback behavior resumes.
+- Configurations without `gpsCacheMinutes` retain the original 3-minute
+  behavior.
+
+Long GPS cache periods can associate detections with an older location if the
+device continues moving while GPS remains unavailable.
+
+## KG Recommended GPS Profile
+
+The current KG recommended GPS cache profile for field testing is:
+
+```ini
+gpsCacheMinutes=720
+```
+
+This is a KG Edition recommendation for mobile testing, not an upstream Piglet
+default.
+
+## KG Edition Roadmap
+
+The following items are planned, experimental, or under development. They are
+not implemented yet:
+
+- Configurable ESP32-C5 2.4 GHz channel selection
+- Configurable ESP32-C5 5 GHz channel selection
+- Configurable Wi-Fi channel dwell times
+- C5 scanning profile tuning for mobile wardriving
+- BLE scan timing / Wi-Fi coexistence tuning
+- Additional field-tested improvements based on real XIAO ESP32-C5 logs and
+  hardware testing
+
+## Upstream and Credits
+
+Original Piglet: [Hamspiced/piglet](https://github.com/Hamspiced/piglet)
+
+Piglet KG Edition is directly forked from the original Hamspiced project.
+
+[drdray1/piglet](https://github.com/drdray1/piglet) is a valuable secondary
+reference and inspiration source for selected experimental ideas. Features are
+reviewed and integrated selectively rather than treating another fork as KG
+Edition's upstream.
+
+## Development Philosophy
+
+KG Edition changes are developed incrementally: one focused feature at a time,
+with source review first, compile/test where possible, real XIAO ESP32-C5
+hardware validation, and field log comparison. Stable, useful improvements may
+later be proposed upstream.
+
+
 ## Features
 
 - 2.4 GHz Wi-Fi scanning  
