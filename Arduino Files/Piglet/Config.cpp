@@ -86,6 +86,23 @@ bool parseKeyValueLine(const String& lineIn, String& keyOut, String& valOut) {
   return true;
 }
 
+static bool parseUint32Strict(const String& raw, uint32_t& out) {
+  String s = raw;
+  s.trim();
+  if (s.length() == 0) return false;
+
+  uint64_t acc = 0;
+  for (uint16_t i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (c < '0' || c > '9') return false;
+    acc = acc * 10ULL + (uint64_t)(c - '0');
+    if (acc > 4294967295ULL) return false;
+  }
+
+  out = (uint32_t)acc;
+  return true;
+}
+
 void cfgAssignKV(const String& k, const String& v) {
   if (k == "wigleBasicToken") cfg.wigleBasicToken = v;
   else if (k == "homeSsid")   cfg.homeSsid = v;
@@ -95,6 +112,14 @@ void cfgAssignKV(const String& k, const String& v) {
   else if (k == "gpsBaud") {
     uint32_t b = (uint32_t)v.toInt();
     if (b > 0) cfg.gpsBaud = b;
+  }
+  else if (k == "gpsCacheMinutes") {
+    uint32_t n = 0;
+    if (parseUint32Strict(v, n) &&
+        n >= GPS_CACHE_MIN_MINUTES &&
+        n <= GPS_CACHE_MAX_MINUTES) {
+      cfg.gpsCacheMinutes = n;
+    }
   }
   else if (k == "scanMode") {
     if (v == "aggressive" || v == "powersaving") cfg.scanMode = v;
@@ -135,6 +160,13 @@ void cfgAssignKV(const String& k, const String& v) {
   }
 }
 
+void validateConfig() {
+  if (cfg.gpsCacheMinutes < GPS_CACHE_MIN_MINUTES)
+    cfg.gpsCacheMinutes = GPS_CACHE_DEFAULT_MINUTES;
+  if (cfg.gpsCacheMinutes > GPS_CACHE_MAX_MINUTES)
+    cfg.gpsCacheMinutes = GPS_CACHE_MAX_MINUTES;
+}
+
 // ---------------- Load / Save ----------------
 
 bool loadConfigFromSD() {
@@ -161,12 +193,15 @@ bool loadConfigFromSD() {
     }
     f.close();
 
+    validateConfig();
+
     Serial.println("[CFG] Loaded config from /wardriver.cfg:");
     Serial.print("      wardriverSsid: "); Serial.println(cfg.wardriverSsid);
     Serial.print("      wardriverPsk:  "); Serial.println(cfg.wardriverPsk.length() ? "(set)" : "(empty)");
     Serial.print("      homeSsid:      "); Serial.println(cfg.homeSsid);
     Serial.print("      homePsk:       "); Serial.println(cfg.homePsk.length() ? "(set)" : "(empty)");
     Serial.print("      gpsBaud:       "); Serial.println(cfg.gpsBaud);
+    Serial.print("      gpsCacheMin:   "); Serial.println(cfg.gpsCacheMinutes);
     Serial.print("      scanMode:      "); Serial.println(cfg.scanMode);
     Serial.print("      wigle token:   "); Serial.println(cfg.wigleBasicToken.length() ? "(set)" : "(empty)");
     return true;
@@ -199,6 +234,8 @@ bool loadConfigFromSD() {
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
 
+    validateConfig();
+
     // Save as new format
     bool ok = saveConfigToSD();
     Serial.println(ok ? "[CFG] Legacy JSON imported + saved to CFG" : "[CFG] Legacy JSON imported but CFG save failed");
@@ -215,6 +252,8 @@ bool saveConfigToSD() {
     Serial.println("[CFG] SD not OK, cannot save config");
     return false;
   }
+
+  validateConfig();
 
   // Remove old file if present
   if (SD.exists(CFG_PATH)) {
@@ -250,6 +289,11 @@ bool saveConfigToSD() {
 
   f.println("# GPS UART baud rate (default: 9600)");
   f.print("gpsBaud=");         f.println(cfg.gpsBaud);
+  f.println("");
+
+  f.println("# GPS cache timeout in minutes (default: 3, valid range: 1-10080)");
+  f.println("# Reuses the last valid position while GPS is lost; long values can stamp old locations.");
+  f.print("gpsCacheMinutes="); f.println(cfg.gpsCacheMinutes);
   f.println("");
 
   f.println("# Scan interval: aggressive (4.5s) or powersaving (12s)");

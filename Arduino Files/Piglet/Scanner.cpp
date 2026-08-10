@@ -27,7 +27,15 @@ static String authModeToString(wifi_auth_mode_t m) {
 bool     lastGpsValid   = false;
 double   lastLat = 0, lastLon = 0, lastAlt = 0, lastAcc = 0;
 uint32_t lastGpsValidMs = 0;          // millis() when position was last cached
-const uint32_t GPS_CACHE_MAX_MS = 180000UL;  // discard cache after 3 min
+
+static uint32_t gpsCacheTimeoutMs() {
+  uint32_t minutes = cfg.gpsCacheMinutes;
+  if (minutes < GPS_CACHE_MIN_MINUTES) minutes = GPS_CACHE_DEFAULT_MINUTES;
+  if (minutes > GPS_CACHE_MAX_MINUTES) minutes = GPS_CACHE_MAX_MINUTES;
+
+  uint64_t ms = (uint64_t)minutes * 60ULL * 1000ULL;
+  return (ms > 4294967295ULL) ? 4294967295UL : (uint32_t)ms;
+}
 
 // ---- Result processor (shared between sync and async paths) ----
 static void processScanResults(int n) {
@@ -41,8 +49,8 @@ static void processScanResults(int n) {
     altM = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
     accM = gps.hdop.isValid()     ? gps.hdop.hdop()       : 0.0;
     // lastLat/lastLon is maintained by loop() — no update here.
-  } else if (lastGpsValid && (millis() - lastGpsValidMs) <= GPS_CACHE_MAX_MS) {
-    // Use last-known position (quality-gated, 3-min expiry) until fix returns
+  } else if (lastGpsValid && (millis() - lastGpsValidMs) <= gpsCacheTimeoutMs()) {
+    // Use last-known position (quality-gated, configurable expiry) until fix returns
     lat = lastLat; lon = lastLon; altM = lastAlt; accM = lastAcc;
   }
 
