@@ -7,4 +7,3 @@ void doScanOnce();
 extern bool     lastGpsValid;
 extern double   lastLat, lastLon, lastAlt, lastAcc;
 extern uint32_t lastGpsValidMs;
-extern const uint32_t GPS_CACHE_MAX_MS;

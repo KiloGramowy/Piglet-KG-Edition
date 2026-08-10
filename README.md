@@ -329,6 +329,13 @@ wardriverPsk=wardrive1234
 
 gpsBaud=9600
 
+# Reuse the last valid GPS position for this many minutes after fix loss.
+# Default: 3. Valid range: 1-10080. Example: 720 keeps it for 12 hours.
+# Long values can stamp detections with stale coordinates if the device moves
+# significantly while GPS is unavailable.
+
+gpsCacheMinutes=3
+
 # ------------------------------------------------------------
 # Wi-Fi Scan Mode
 # ------------------------------------------------------------

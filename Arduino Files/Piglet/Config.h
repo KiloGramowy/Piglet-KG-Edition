@@ -2,6 +2,10 @@
 #include <Arduino.h>
 #include "PinMapDefs.h"
 
+static const uint32_t GPS_CACHE_DEFAULT_MINUTES = 3;
+static const uint32_t GPS_CACHE_MIN_MINUTES     = 1;
+static const uint32_t GPS_CACHE_MAX_MINUTES     = 7UL * 24UL * 60UL;  // 1 week
+
 struct Config {
   String wigleBasicToken;
   String homeSsid;
@@ -9,6 +13,7 @@ struct Config {
   String wardriverSsid = "Piglet-WARDRIVE";
   String wardriverPsk  = "wardrive1234";
   uint32_t gpsBaud     = 9600;
+  uint32_t gpsCacheMinutes = GPS_CACHE_DEFAULT_MINUTES;
   String scanMode      = "aggressive"; // aggressive | powersaving
   String board = "auto"; // auto | s3 | c5 | c6 | c3 | exp  (pins selected at boot; reboot required after change)
   String speedUnits  = "kmh"; // kmh | mph
@@ -57,5 +62,6 @@ bool wardriverIsC5();
 String trimCopy(String s);
 bool parseKeyValueLine(const String& lineIn, String& keyOut, String& valOut);
 void cfgAssignKV(const String& k, const String& v);
+void validateConfig();
 bool loadConfigFromSD();
 bool saveConfigToSD();
