@@ -19,24 +19,31 @@ Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet
 
 ## KG Edition Status
 
-Currently implemented:
+Hardware validated on Seeed Studio XIAO ESP32-C5:
 
-- ✅ Configurable GPS cache timeout
+- Configurable GPS cache duration
+- WebUI GPS cache control
+- 720-minute / 12-hour KG GPS field profile
+- Configurable 2.4 GHz / 5 GHz channel profiles
+- Per-channel asynchronous scheduler for custom channel profiles
+- Separate configurable dwell for 2.4 GHz / 5 GHz custom scanning
+- WebUI Scanning (Solo) controls
+- Tested KG scanning profile:
+  - 2.4 GHz: `1,6,11` at `110 ms`
+  - 5 GHz: `36,40,44,48` at `100 ms`
+- Save/reboot persistence for the tested KG profile
+- Runtime CSV verified to contain only the selected channels for that tested
+  profile
 
-Under development / roadmap:
+This validates the tested configuration above. It does not claim that every
+possible custom channel and dwell combination has been hardware tested.
 
-- 🧪 Configurable ESP32-C5 2.4 GHz channel selection
-- 🧪 Configurable ESP32-C5 5 GHz channel selection
-- 🧪 Configurable Wi-Fi dwell timing
-- 🧪 ESP32-C5 mobile wardriving scan-profile tuning
-- 🧪 BLE / Wi-Fi coexistence and BLE scan timing
-
-Only the GPS cache timeout is currently implemented. Stage 2 scanning controls
-and BLE tuning are roadmap items, not completed features.
+Original Piglet all-channel scanning remains available as the default/fallback
+mode.
 
 ## Current KG Configuration
 
-For the current KG GPS field-testing profile, add this line to `/wardriver.cfg`:
+For the current KG GPS field-testing profile:
 
 ```ini
 gpsCacheMinutes=720
@@ -46,12 +53,25 @@ This keeps the last valid GPS coordinates available for up to 720 minutes
 (12 hours) after the current GPS fix is lost. This is a KG Edition
 recommendation, not an upstream Piglet default.
 
+For the hardware-tested XIAO ESP32-C5 scanning profile:
+
+```ini
+wifi24Channels=1,6,11
+wifi5Channels=36,40,44,48
+wifi24DwellMs=110
+wifi5DwellMs=100
+```
+
+Leave `wifi24Channels` and `wifi5Channels` empty to use Original Piglet
+all-channel scanning. Empty or `0` dwell values use the existing `scanMode`
+dwell timing when custom channel scanning is active.
+
 ## KG Edition Changes
 
 ### Configurable GPS cache timeout
 
-KG Edition currently adds one completed KG-specific feature: configurable reuse
-of the last valid GPS coordinates after the current GPS fix is lost.
+KG Edition adds configurable reuse of the last valid GPS coordinates after the
+current GPS fix is lost.
 
 Configuration key:
 
@@ -72,18 +92,54 @@ gpsCacheMinutes=3
 Long GPS cache periods can associate detections with an older location if the
 device continues moving while GPS remains unavailable.
 
+### Configurable scanning profiles and dwell
+
+KG Edition adds custom 2.4 GHz / 5 GHz channel profiles for solo scanning, a
+per-channel asynchronous scheduler for those custom profiles, and separate dwell
+settings for 2.4 GHz and 5 GHz.
+
+Configuration keys:
+
+```ini
+wifi24Channels=
+wifi5Channels=
+wifi24DwellMs=
+wifi5DwellMs=
+```
+
+- Empty channel lists select Original Piglet all-channel scanning.
+- `wifi24Channels` accepts 2.4 GHz channels `1..14`.
+- `wifi5Channels` accepts supported 5 GHz channels on ESP32-C5.
+- `wifi24DwellMs` and `wifi5DwellMs` apply only to the custom per-channel
+  scheduler.
+- Dwell range is `20..1500` ms.
+- Empty or `0` dwell values fall back to the existing `scanMode` dwell timing.
+- `20 ms` dwell is accepted but experimental.
+- The KG Recommended WebUI profile writes `1,6,11` / `36,40,44,48` with
+  `110 ms` / `100 ms` dwell.
+
 ## KG Edition Roadmap
 
-The following items are planned, experimental, or under development. They are
-not implemented yet:
+The following items are planned or experimental. They are not implemented yet:
 
-- Configurable ESP32-C5 2.4 GHz channel selection
-- Configurable ESP32-C5 5 GHz channel selection
-- Configurable Wi-Fi channel dwell times
-- C5 scanning profile tuning for mobile wardriving
-- BLE scan timing / Wi-Fi coexistence tuning
+- Further ESP32-C5 mobile wardriving scan-profile tuning. The next planned
+  5 GHz dwell field-test values are `60 ms` and `40 ms`; they are not yet
+  validated.
+- Automatic Log Retention / Auto Delete:
+  - Off / On
+  - Delete eligibility based on successful upload to WDGWars, WiGLE, or both
+  - Configurable "Keep last N uploaded logs"
+  - Delete oldest eligible uploaded logs only after the retained count is
+    exceeded
+  - Never delete a log when the required upload confirmation is missing or
+    unsuccessful
+  - If "Both" is selected, require confirmed successful upload to both services
+    before deletion
+- BLE scanning/timing and Wi-Fi coexistence tuning
 - Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
+
+BLE scanning and BLE timing are not implemented in KG Edition yet.
 
 ## Upstream and Credits
 
@@ -451,6 +507,23 @@ gpsCacheMinutes=3
 # powersaving — scans every ~12 seconds (slower, less power)
 
 scanMode=aggressive
+
+# ------------------------------------------------------------
+# Solo Wi-Fi Channel Profiles (KG Edition)
+# ------------------------------------------------------------
+# Leave both channel lists empty for Original Piglet all-channel scanning.
+# KG tested XIAO ESP32-C5 profile:
+#   wifi24Channels=1,6,11
+#   wifi5Channels=36,40,44,48
+#   wifi24DwellMs=110
+#   wifi5DwellMs=100
+# Empty or 0 dwell values use the scanMode-derived dwell timing.
+# Valid explicit dwell range: 20-1500 ms. 20 ms is experimental.
+
+wifi24Channels=
+wifi5Channels=
+wifi24DwellMs=
+wifi5DwellMs=
 
 # ------------------------------------------------------------
 # Speed Units (display only)
