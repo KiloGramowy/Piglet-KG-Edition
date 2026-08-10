@@ -19,26 +19,26 @@ Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet
 
 ## KG Edition Status
 
-Hardware validated on Seeed Studio XIAO ESP32-C5:
+✅ Hardware validated on Seeed Studio XIAO ESP32-C5:
 
-- Configurable GPS cache duration
-- WebUI GPS cache control
-- 720-minute / 12-hour KG GPS field profile
-- Configurable 2.4 GHz / 5 GHz channel profiles
-- Per-channel asynchronous scheduler for custom channel profiles
-- Separate configurable dwell for 2.4 GHz / 5 GHz custom scanning
-- WebUI Scanning (Solo) controls
-- Tested KG scanning profile:
+- ✅ Configurable GPS cache duration
+- ✅ WebUI GPS cache control
+- ✅ 720-minute / 12-hour KG GPS field profile
+- ✅ Configurable 2.4 GHz / 5 GHz channel profiles
+- ✅ Per-channel asynchronous scheduler for custom channel profiles
+- ✅ Separate configurable dwell for 2.4 GHz / 5 GHz custom scanning
+- ✅ WebUI Scanning (Solo) controls
+- ✅ Tested KG scanning profile:
   - 2.4 GHz: `1,6,11` at `110 ms`
   - 5 GHz: `36,40,44,48` at `100 ms`
-- Save/reboot persistence for the tested KG profile
-- Runtime CSV verified to contain only the selected channels for that tested
+- ✅ Save/reboot persistence for the tested KG profile
+- ✅ Runtime CSV verified to contain only the selected channels for that tested
   profile
 
 This validates the tested configuration above. It does not claim that every
 possible custom channel and dwell combination has been hardware tested.
 
-Original Piglet all-channel scanning remains available as the default/fallback
+🐷 Original Piglet all-channel scanning remains available as the default/fallback
 mode.
 
 ## Current KG Configuration
@@ -122,10 +122,10 @@ wifi5DwellMs=
 
 The following items are planned or experimental. They are not implemented yet:
 
-- Further ESP32-C5 mobile wardriving scan-profile tuning. The next planned
+- 🧪 Further ESP32-C5 mobile wardriving scan-profile tuning. The next planned
   5 GHz dwell field-test values are `60 ms` and `40 ms`; they are not yet
   validated.
-- Automatic Log Retention / Auto Delete:
+- 📌 Automatic Log Retention / Auto Delete:
   - Off / On
   - Delete eligibility based on successful upload to WDGWars, WiGLE, or both
   - Configurable "Keep last N uploaded logs"
@@ -135,11 +135,11 @@ The following items are planned or experimental. They are not implemented yet:
     unsuccessful
   - If "Both" is selected, require confirmed successful upload to both services
     before deletion
-- BLE scanning/timing and Wi-Fi coexistence tuning
-- Additional field-tested improvements based on real XIAO ESP32-C5 logs and
+- 🚧 BLE scanning/timing and Wi-Fi coexistence tuning
+- 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
 
-BLE scanning and BLE timing are not implemented in KG Edition yet.
+🚧 BLE scanning and BLE timing are not implemented in KG Edition yet.
 
 ## Upstream and Credits
 
