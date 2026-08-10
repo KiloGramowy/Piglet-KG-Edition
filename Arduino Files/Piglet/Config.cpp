@@ -267,6 +267,32 @@ void cfgAssignKV(const String& k, const String& v) {
       Serial.println("[CFG] Invalid wifi5DwellMs ignored");
     }
   }
+  else if (k == "bleEnabled") {
+    String vv = v; vv.toLowerCase();
+    cfg.bleEnabled = (vv == "true" || vv == "1" || vv == "enabled" || vv == "on");
+  }
+  else if (k == "bleScanDurationMs") {
+    uint32_t n = 0;
+    if (parseUint32Strict(v, n) &&
+        n >= BLE_SCAN_DURATION_MIN_MS &&
+        n <= BLE_SCAN_DURATION_MAX_MS) {
+      cfg.bleScanDurationMs = (uint16_t)n;
+    } else {
+      cfg.bleScanDurationMs = BLE_SCAN_DURATION_DEFAULT_MS;
+      Serial.println("[CFG] Invalid bleScanDurationMs ignored");
+    }
+  }
+  else if (k == "bleEveryNCycles") {
+    uint32_t n = 0;
+    if (parseUint32Strict(v, n) &&
+        n >= BLE_EVERY_N_CYCLES_MIN &&
+        n <= BLE_EVERY_N_CYCLES_MAX) {
+      cfg.bleEveryNCycles = (uint16_t)n;
+    } else {
+      cfg.bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
+      Serial.println("[CFG] Invalid bleEveryNCycles ignored");
+    }
+  }
   else if (k == "board") {
     String vv = v; vv.toLowerCase();
     if (vv == "auto" || vv == "s3" || vv == "exp" || vv == "c5" || vv == "c6" || vv == "c3") cfg.board = vv;
@@ -308,6 +334,12 @@ void validateConfig() {
     cfg.gpsCacheMinutes = GPS_CACHE_DEFAULT_MINUTES;
   if (cfg.gpsCacheMinutes > GPS_CACHE_MAX_MINUTES)
     cfg.gpsCacheMinutes = GPS_CACHE_MAX_MINUTES;
+  if (cfg.bleScanDurationMs < BLE_SCAN_DURATION_MIN_MS ||
+      cfg.bleScanDurationMs > BLE_SCAN_DURATION_MAX_MS)
+    cfg.bleScanDurationMs = BLE_SCAN_DURATION_DEFAULT_MS;
+  if (cfg.bleEveryNCycles < BLE_EVERY_N_CYCLES_MIN ||
+      cfg.bleEveryNCycles > BLE_EVERY_N_CYCLES_MAX)
+    cfg.bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
 }
 
 // ---------------- Load / Save ----------------
@@ -354,6 +386,9 @@ bool loadConfigFromSD() {
     Serial.print("      wifi5Dwell:    ");
     if (cfg.wifi5DwellMs > 0) Serial.println(cfg.wifi5DwellMs);
     else Serial.println("auto");
+    Serial.print("      BLE:           "); Serial.println(cfg.bleEnabled ? "enabled" : "disabled");
+    Serial.print("      BLE duration:  "); Serial.println(cfg.bleScanDurationMs);
+    Serial.print("      BLE cycles:    "); Serial.println(cfg.bleEveryNCycles);
     Serial.print("      wigle token:   "); Serial.println(cfg.wigleBasicToken.length() ? "(set)" : "(empty)");
     return true;
   }
@@ -384,6 +419,9 @@ bool loadConfigFromSD() {
     cfg.wardriverPsk    = doc["wardriverPsk"]    | cfg.wardriverPsk;
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
+    cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
+    cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
+    cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
 
     validateConfig();
 
@@ -465,6 +503,13 @@ bool saveConfigToSD() {
   f.print("wifi5DwellMs=");
   if (cfg.wifi5DwellMs > 0) f.println(cfg.wifi5DwellMs);
   else f.println();
+  f.println("");
+
+  f.println("# BLE scanning is experimental. Wi-Fi remains the primary scanner.");
+  f.println("# Passive BLE burst duration: 250-5000 ms. BLE repeats after N completed Wi-Fi cycles: 1-100.");
+  f.print("bleEnabled=");        f.println(cfg.bleEnabled ? "true" : "false");
+  f.print("bleScanDurationMs="); f.println(cfg.bleScanDurationMs);
+  f.print("bleEveryNCycles=");   f.println(cfg.bleEveryNCycles);
   f.println("");
 
   f.println("# Speed display: kmh or mph");

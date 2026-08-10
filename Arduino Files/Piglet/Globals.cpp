@@ -36,6 +36,7 @@ const uint32_t AP_EXTEND_PROMPT_LEAD_MS = 30000UL;            // prompt 30 s bef
 // ---- Counters ----
 uint32_t networksFound2G = 0;
 uint32_t networksFound5G = 0;
+uint32_t bleUniqueCount = 0;
 
 // ---- Log state ----
 File logFile;

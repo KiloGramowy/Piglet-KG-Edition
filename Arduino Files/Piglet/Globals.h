@@ -55,6 +55,7 @@ extern const uint32_t AP_EXTEND_PROMPT_LEAD_MS;
 // ---- Counters ----
 extern uint32_t networksFound2G;
 extern uint32_t networksFound5G;
+extern uint32_t bleUniqueCount;
 
 // ---- Log state ----
 extern File logFile;

@@ -4,6 +4,7 @@
 #include "SDUtils.h"
 #include "Display.h"
 #include "WigleUpload.h"
+#include "BleScanner.h"
 #include <ArduinoJson.h>
 
 // ---------------- Embedded HTML ----------------
@@ -423,6 +424,14 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
             <input id="wifi5DwellInput" class="mt-sm hidden" type="number" min="20" max="1500" step="1" value="100">
             <div class="field-help">Longer dwell improves capture reliability but slows the full 5 GHz sweep. KG field-test starting point: 100 ms. After validation we will test 60 ms and 40 ms. 20 ms is experimental.</div>
           </div>
+          <div>
+            <label>BLE scanning</label>
+            <select id="bleEnabled">
+              <option value="false">Disabled - default</option>
+              <option value="true">Enabled - experimental</option>
+            </select>
+            <div class="field-help">Passive BLE scanning runs between Wi-Fi cycles. Initial KG test profile: 1000 ms after every 5 completed Wi-Fi cycles. Wi-Fi remains the primary scanner.</div>
+          </div>
         </div>
       </div>
       <div><label>Speed Units</label>
@@ -753,7 +762,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','homeSsid','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','homeSsid','wardriverSsid','wardriverPsk','scanMode','bleEnabled','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -842,7 +851,7 @@ async function deleteAllLogs(){
 async function doSave(){
   if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original Piglet.');
   prepareDwellSave();
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -1109,6 +1118,9 @@ static void handleStatus() {
   c["wifi24DwellMs"] = cfg.wifi24DwellMs > 0 ? String(cfg.wifi24DwellMs) : "";
   c["wifi5DwellMs"] = cfg.wifi5DwellMs > 0 ? String(cfg.wifi5DwellMs) : "";
   c["scanMode"] = cfg.scanMode;
+  c["bleEnabled"] = cfg.bleEnabled ? "true" : "false";
+  c["bleScanDurationMs"] = cfg.bleScanDurationMs;
+  c["bleEveryNCycles"] = cfg.bleEveryNCycles;
   c["board"] = cfg.board;
   c["speedUnits"] = cfg.speedUnits;
   c["battPin"] = cfg.battPin;
@@ -1253,6 +1265,7 @@ static void handleExtend() {
 static void handleStop() {
   scanningEnabled = false;
   userScanOverride = true;
+  bleScannerStop();
   server.send(200, "text/plain", "OK");
 }
 
@@ -1278,6 +1291,10 @@ static void handleSaveConfig() {
     cfg.wardriverPsk    = doc["wardriverPsk"]    | cfg.wardriverPsk;
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
+    cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
+    cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
+    cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
+    validateConfig();
 
     any = true;
   } else {
@@ -1303,6 +1320,7 @@ static void handleSaveConfig() {
   }
 
   Serial.println("[CFG] Updated config from Web UI (in-RAM). Saving to SD...");
+  if (!cfg.bleEnabled) bleScannerStop();
   bool ok = saveConfigToSD();
   server.send(ok ? 200 : 500, "text/plain", ok ? "OK" : "FAIL");
 }
@@ -1314,6 +1332,7 @@ static void handleCleanup() {
 }
 
 static void handleReboot() {
+  bleScannerStop();
   closeLogFile();                      // flush & close active CSV log cleanly
   server.send(200, "text/plain", "OK");
   server.client().stop();
@@ -1322,6 +1341,7 @@ static void handleReboot() {
 }
 
 static void handleWigleTest() {
+  bleScannerStop();
   bool ok = wigleTestToken();
 
   DynamicJsonDocument doc(384);
@@ -1347,6 +1367,7 @@ static void handleWdgwarsTest() {
     return;
   }
 
+  bleScannerStop();
   bool ok = wdgwarsTestKey();
 
   DynamicJsonDocument doc(256);
@@ -1363,6 +1384,7 @@ static void handleWdgwarsUploadAll() {
   if (WiFi.status() != WL_CONNECTED) { server.send(400, "text/plain", "STA WiFi not connected"); return; }
   if (cfg.wdgwarsApiKey.length() < 8) { server.send(400, "text/plain", "No API key configured"); return; }
 
+  bleScannerStop();
   // Pass -1 explicitly: web-triggered uploads bypass the maxBootUploads cap.
   uint32_t okCount = uploadAllCsvsToWdgwars(-1);
 
@@ -1381,6 +1403,7 @@ static void handleWigleUploadAll() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
   if (WiFi.status() != WL_CONNECTED) { server.send(400, "text/plain", "STA WiFi not connected"); return; }
 
+  bleScannerStop();
   // Pass -1 explicitly: web-triggered uploads are always unlimited,
   // bypassing the maxBootUploads cap which applies only at boot.
   uint32_t okCount = uploadAllCsvsToWigle(-1);
@@ -1406,6 +1429,7 @@ static void handleWigleUploadOne() {
   String path = server.arg("name");
   if (!SD.exists(path)) { server.send(404, "text/plain", "Not found"); return; }
 
+  bleScannerStop();
   uploading = true;
   uploadPausedScanWasEnabled = scanningEnabled;
   scanningEnabled = false;
