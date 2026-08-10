@@ -231,6 +231,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   .cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:520px){.cfg-grid{grid-template-columns:1fr}}
   .cfg-grid>div{display:flex;flex-direction:column}
+  .cfg-section{grid-column:1/-1}
+  .cfg-help,.field-help{font-size:12px;color:var(--muted);line-height:1.35;margin-top:6px}
+  .cfg-section .cfg-grid{margin-top:12px}
+  .scan-error{font-size:13px;color:var(--bad);margin-top:10px;display:none}
+  .cfg-grid>.scan-error{display:none}
+  .hidden{display:none!important}
 
   /* ---- Details/Advanced ---- */
   details summary{
@@ -354,6 +360,46 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <option value="aggressive">Aggressive</option>
           <option value="powersaving">Power Saving</option>
         </select>
+      </div>
+      <div class="inner-card cfg-section">
+        <h4>Scanning (Solo)</h4>
+        <div class="cfg-help">Channel profiles trade scan speed for coverage. KG Recommended profiles are starting points for field testing. Original mode preserves Piglet's normal all-channel scanner.</div>
+        <input id="wifi24Channels" type="hidden">
+        <input id="wifi5Channels" type="hidden">
+        <div class="cfg-grid">
+          <div>
+            <label>Channel scanning mode</label>
+            <select id="channelScanMode" onchange="updateChannelProfileVisibility()">
+              <option value="original">Original all-channel scanning (default)</option>
+              <option value="custom">Custom channel profiles</option>
+            </select>
+          </div>
+          <div id="channelProfileError" class="scan-error">Choose at least one channel profile, or switch back to Original all-channel scanning.</div>
+        </div>
+        <div id="soloProfileControls" class="cfg-grid">
+          <div>
+            <label>2.4 GHz channels</label>
+            <select id="wifi24Profile" onchange="updateChannelProfileVisibility()">
+              <option value="recommended">1 / 6 / 11 only - KG Recommended</option>
+              <option value="all">All channels 1-14</option>
+              <option value="custom">Custom</option>
+              <option value="off">Off</option>
+            </select>
+            <input id="wifi24CustomChannels" class="mt-sm hidden" placeholder="1,6,11,13">
+            <div class="field-help">1/6/11 covers the main non-overlapping 2.4 GHz channels and gives a faster sweep. All channels improves coverage of APs using intermediate channels but takes longer.</div>
+          </div>
+          <div>
+            <label>5 GHz channels</label>
+            <select id="wifi5Profile" onchange="updateChannelProfileVisibility()">
+              <option value="common">Common 36 / 40 / 44 / 48 - KG Recommended</option>
+              <option value="all">All supported channels</option>
+              <option value="custom">Custom</option>
+              <option value="off">Off</option>
+            </select>
+            <input id="wifi5CustomChannels" class="mt-sm hidden" placeholder="36,40,44,48,100">
+            <div class="field-help">The Common profile focuses on 36-48 for a faster 5 GHz sweep. All supported channels also scans DFS and additional channels, increasing coverage but making a full cycle slower.</div>
+          </div>
+        </div>
       </div>
       <div><label>Speed Units</label>
         <select id="speedUnits">
@@ -481,6 +527,95 @@ function formatBytes(b){
 /* ---- Masked config keys that should not be filled back into form ---- */
 const maskedKeys=new Set(['homePsk']);
 
+const WIFI24_RECOMMENDED='1,6,11';
+const WIFI24_ALL='1,2,3,4,5,6,7,8,9,10,11,12,13,14';
+const WIFI5_COMMON='36,40,44,48';
+const WIFI5_ALL='36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165,169,173,177';
+
+function compactChannels(v){
+  return String(v||'').replace(/\s+/g,'');
+}
+
+function setChannelError(msg){
+  const el=$('channelProfileError');
+  if(!el)return;
+  el.textContent=msg||'';
+  el.style.display=msg?'block':'none';
+}
+
+function setProfileFromChannels(band,value){
+  const val=compactChannels(value);
+  if(band==='24'){
+    const sel=$('wifi24Profile');
+    if(!sel)return;
+    if(val==='')sel.value='off';
+    else if(val===WIFI24_RECOMMENDED)sel.value='recommended';
+    else if(val===WIFI24_ALL)sel.value='all';
+    else{sel.value='custom';$('wifi24CustomChannels').value=val;}
+  }else{
+    const sel=$('wifi5Profile');
+    if(!sel)return;
+    if(val==='')sel.value='off';
+    else if(val===WIFI5_COMMON)sel.value='common';
+    else if(val===WIFI5_ALL)sel.value='all';
+    else{sel.value='custom';$('wifi5CustomChannels').value=val;}
+  }
+}
+
+function applyLoadedChannelConfig(ch24,ch5){
+  const v24=compactChannels(ch24);
+  const v5=compactChannels(ch5);
+  const mode=$('channelScanMode');
+  if(mode)mode.value=(v24===''&&v5==='')?'original':'custom';
+  if($('wifi24Channels'))$('wifi24Channels').value=v24;
+  if($('wifi5Channels'))$('wifi5Channels').value=v5;
+  setProfileFromChannels('24',v24);
+  setProfileFromChannels('5',v5);
+  updateChannelProfileVisibility();
+}
+
+function channelsFromProfile(band){
+  if(band==='24'){
+    const sel=$('wifi24Profile')?.value||'recommended';
+    if(sel==='recommended')return WIFI24_RECOMMENDED;
+    if(sel==='all')return WIFI24_ALL;
+    if(sel==='custom')return ($('wifi24CustomChannels')?.value||'').trim();
+    return '';
+  }
+  const sel=$('wifi5Profile')?.value||'common';
+  if(sel==='common')return WIFI5_COMMON;
+  if(sel==='all')return WIFI5_ALL;
+  if(sel==='custom')return ($('wifi5CustomChannels')?.value||'').trim();
+  return '';
+}
+
+function updateChannelProfileVisibility(){
+  const custom=($('channelScanMode')?.value||'original')==='custom';
+  const controls=$('soloProfileControls');
+  if(controls)controls.style.display=custom?'grid':'none';
+  $('wifi24CustomChannels')?.classList.toggle('hidden',!custom||($('wifi24Profile')?.value!=='custom'));
+  $('wifi5CustomChannels')?.classList.toggle('hidden',!custom||($('wifi5Profile')?.value!=='custom'));
+  if(!custom)setChannelError('');
+}
+
+function prepareChannelProfileSave(){
+  const mode=$('channelScanMode')?.value||'original';
+  let ch24='';
+  let ch5='';
+  if(mode==='custom'){
+    ch24=channelsFromProfile('24');
+    ch5=channelsFromProfile('5');
+    if(ch24.trim()===''&&ch5.trim()===''){
+      setChannelError('Choose at least one channel profile, or switch back to Original all-channel scanning.');
+      return false;
+    }
+  }
+  if($('wifi24Channels'))$('wifi24Channels').value=ch24;
+  if($('wifi5Channels'))$('wifi5Channels').value=ch5;
+  setChannelError('');
+  return true;
+}
+
 /* ---- Status ---- */
 async function loadStatus(){
   try{
@@ -520,6 +655,7 @@ async function loadStatus(){
         if(el)el.value=v;
       }
     }
+    applyLoadedChannelConfig(j?.config?.wifi24Channels||'',j?.config?.wifi5Channels||'');
   }catch(e){console.error('loadStatus',e)}
 }
 
@@ -593,7 +729,8 @@ async function deleteAllLogs(){
 
 /* ---- Shared save logic used by both Save and Save+Reboot ---- */
 async function doSave(){
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original all-channel scanning.');
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -792,11 +929,20 @@ static void handleRoot() {
   Serial.println("[WEB] / send_P done");
 }
 
+static String channelListToString(const uint8_t* channels, uint8_t count) {
+  String s;
+  for (uint8_t i = 0; i < count; i++) {
+    if (i > 0) s += ",";
+    s += String(channels[i]);
+  }
+  return s;
+}
+
 static void handleStatus() {
   // Heap allocation: StaticJsonDocument<N> puts N bytes on the Arduino loop
   // task stack (8192 bytes). Even 1024 bytes plus WebServer call chain overhead
   // risks a stack overflow.  DynamicJsonDocument allocates from the heap instead.
-  DynamicJsonDocument doc(2048);
+  DynamicJsonDocument doc(2304);
 
   bool allowScan = scanningEnabled && sdOk && (userScanOverride || !autoPaused);
   doc["scanningEnabled"] = scanningEnabled;
@@ -846,6 +992,8 @@ static void handleStatus() {
   c["wardriverPsk"] = cfg.wardriverPsk;
   c["gpsBaud"] = cfg.gpsBaud;
   c["gpsCacheMinutes"] = cfg.gpsCacheMinutes;
+  c["wifi24Channels"] = channelListToString(cfg.wifi24Channels, cfg.wifi24ChannelCount);
+  c["wifi5Channels"] = channelListToString(cfg.wifi5Channels, cfg.wifi5ChannelCount);
   c["scanMode"] = cfg.scanMode;
   c["board"] = cfg.board;
   c["speedUnits"] = cfg.speedUnits;
