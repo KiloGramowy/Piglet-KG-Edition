@@ -306,14 +306,14 @@ void appendWigleRow(const String& mac, const String& ssid, const String& auth,
   }
 }
 
-void appendBleRow(const BleObservation& obs, const String& firstSeen,
+bool appendBleRow(const BleObservation& obs, const String& firstSeen,
                   double lat, double lon, double altM, double accM) {
-  if (!sdOk || !logFile) return;
+  if (!sdOk || !logFile) return false;
 
   if (csvRowCount >= CSV_MAX_ROWS) {
     Serial.println("[SD] CSV row limit reached, rotating log file");
     closeLogFile();
-    if (!openLogFile()) return;
+    if (!openLogFile()) return false;
   }
 
   String line = formatBleWigleRow(obs.addr, obs.addrType, obs.name, firstSeen,
@@ -333,14 +333,17 @@ void appendBleRow(const BleObservation& obs, const String& firstSeen,
       closeLogFile();
       if (openLogFile()) {
         Serial.println("[SD] Reopen OK - retrying BLE write");
-        logFile.println(line);
-        consecFails = 0;
+        size_t retryWritten = logFile.println(line);
+        if (retryWritten > 0) {
+          consecFails = 0;
+          return true;
+        }
       } else {
         Serial.println("[SD] Reopen FAILED - SD marked unusable");
         sdOk = false;
       }
     }
-    return;
+    return false;
   }
 
   static uint32_t lastFlushMs = 0;
@@ -354,4 +357,6 @@ void appendBleRow(const BleObservation& obs, const String& firstSeen,
     lastFlushMs = nowMs;
     linesSinceFlush = 0;
   }
+
+  return true;
 }

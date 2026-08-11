@@ -198,26 +198,35 @@ static void pollButton() {
 }
 
 static void drainBlePendingToLog() {
-  if (!cfg.bleEnabled || !sdOk || !logFile || !bleScannerHasPending()) return;
+  if (!cfg.bleEnabled) return;
+  if (!sdOk || !logFile || !bleScannerHasPending()) {
+    bleScannerDiagAfterDrain();
+    return;
+  }
 
   GpsLogSnapshot gpsSnap = captureGpsLogSnapshot();
   String firstSeen = iso8601NowUTC();
+  uint16_t drained = 0;
   uint16_t wrote = 0;
 
   BleObservation obs;
   while (bleScannerConsume(obs)) {
-    appendBleRow(obs, firstSeen,
-                 gpsSnap.lat, gpsSnap.lon, gpsSnap.altM, gpsSnap.accM);
-    wrote++;
+    drained++;
+    if (appendBleRow(obs, firstSeen,
+                     gpsSnap.lat, gpsSnap.lon, gpsSnap.altM, gpsSnap.accM)) {
+      wrote++;
+    }
   }
 
   if (wrote > 0 && logFile) {
     logFile.flush();
-    Serial.printf("[BLE] Wrote %u row(s)%s%s\n",
+    Serial.printf("[KG-BLE] Wrote %u row(s)%s%s\n",
                   wrote,
                   gpsSnap.usedFix ? " (GPS fix)" : "",
                   gpsSnap.usedCache ? " (GPS cache)" : "");
   }
+  bleScannerDiagNoteDrain(drained, wrote);
+  bleScannerDiagAfterDrain();
 }
 
 static void serviceBleLifecycle(bool allowScan) {
@@ -228,7 +237,7 @@ static void serviceBleLifecycle(bool allowScan) {
 
   bleScannerTick();
   if (!allowScan && bleScannerIsScanning()) {
-    Serial.println("[BLE] Stopping burst because wardriving is paused");
+    Serial.println("[KG-BLE] Stopping burst because wardriving is paused");
     bleScannerStop();
   }
   drainBlePendingToLog();
@@ -242,11 +251,11 @@ static void maybeStartBleAfterWifiCycle(uint32_t completedCycles) {
   if ((completedCycles - lastBleCycle) < cfg.bleEveryNCycles) return;
   if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return;
 
+  Serial.printf("[KG-BLE] burst due cycle=%lu\n", (unsigned long)completedCycles);
   if (bleScannerStartBurst()) {
     lastBleCycle = completedCycles;
   } else {
-    lastBleCycle = completedCycles;
-    Serial.println("[BLE] Burst skipped after Wi-Fi cycle");
+    Serial.println("[KG-BLE] burst skipped after Wi-Fi cycle");
   }
 }
 
@@ -381,6 +390,8 @@ void setup() {
       Serial.println(sdOk ? "OK" : "FAIL");
     }
   }
+
+  bleScannerDiagPrintConfig();
 
   // =========================
   // Phase 3: Init Button + OLED + GPS using FINAL pins
