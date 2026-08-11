@@ -79,9 +79,9 @@ bleScanDurationMs=1000
 bleEveryNCycles=5
 ```
 
-These BLE values work on the project XIAO ESP32-C5 and are exposed in WebUI for
-field tuning. They are not yet claimed to be optimal and are not a KG
-Recommended BLE preset.
+These BLE values work on the project XIAO ESP32-C5 and are the fixed BLE timing
+used by the WebUI `KG Recommended` scanning profile. They remain field-tuning
+starting values, not a claim of universal optimum.
 
 ## KG Edition Changes
 
