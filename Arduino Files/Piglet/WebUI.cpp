@@ -435,12 +435,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           </div>
           <div>
             <label>BLE scan duration (ms)</label>
-            <input id="bleScanDurationMs" type="number" min="250" max="5000" step="250" value="1000">
+            <input id="bleScanDurationMs" type="number" min="250" max="5000" step="250" placeholder="250-5000">
             <div class="field-help">KG Recommended fixes this at 1000 ms. In Custom, this controls each passive BLE scan burst; longer listens for more BLE advertisements but leaves less time for Wi-Fi.</div>
           </div>
           <div>
             <label>BLE every N Wi-Fi cycles</label>
-            <input id="bleEveryNCycles" type="number" min="1" max="100" step="1" value="5">
+            <input id="bleEveryNCycles" type="number" min="1" max="100" step="1" placeholder="1-100">
             <div class="field-help">KG Recommended fixes this at every 5 Wi-Fi cycles. In Custom, lower runs BLE more often; higher leaves more Wi-Fi time. One cycle is one full configured channel sweep.</div>
           </div>
         </div>
@@ -583,7 +583,7 @@ const WIFI_DWELL_RECOMMENDED={wifi24DwellInput:WIFI24_DWELL_RECOMMENDED,wifi5Dwe
 const SCAN_PROFILE_HELP={
   original:'Switch to KG Recommended or Custom to configure channel selection and dwell.',
   kg:'KG Recommended writes the hardware-tested starting profile: 2.4 GHz 1/6/11 at 110 ms, 5 GHz 36/40/44/48 at 100 ms, and BLE timing 1000 ms / every 5 cycles when BLE is enabled.',
-  custom:'Custom enables manual channel and dwell controls. Choose at least one band before saving.'
+  custom:'Custom enables manual channel, dwell, and BLE timing controls. Enter Custom BLE values before saving when BLE is enabled.'
 };
 
 function compactChannels(v){
@@ -646,6 +646,10 @@ function setBleTimingValues(duration,cycles){
   if($('bleEveryNCycles'))$('bleEveryNCycles').value=cycles;
 }
 
+function clearBleTimingValues(){
+  setBleTimingValues('','');
+}
+
 function parsePositiveIntStrict(v){
   const s=String(v??'').trim();
   if(!/^[0-9]+$/.test(s))return NaN;
@@ -653,7 +657,14 @@ function parsePositiveIntStrict(v){
 }
 
 function validateBleTiming(){
+  const profile=normalizeScanProfile($('channelScanMode')?.value);
+  if(profile==='original')return;
   const duration=parsePositiveIntStrict($('bleScanDurationMs')?.value);
+  const durationRaw=String($('bleScanDurationMs')?.value??'').trim();
+  const cyclesRaw=String($('bleEveryNCycles')?.value??'').trim();
+  if(profile==='custom'&&(durationRaw===''||cyclesRaw==='')){
+    throw new Error('Enter Custom BLE scan duration and cycle interval before saving.');
+  }
   if(!Number.isInteger(duration)||duration<250||duration>5000||((duration-250)%250)!==0){
     throw new Error('BLE scan duration must be 250..5000 ms in 250 ms steps.');
   }
@@ -714,6 +725,21 @@ function applyKgRecommendedProfileValues(){
   setBleTimingValues(BLE_DURATION_KG_RECOMMENDED,BLE_CYCLES_KG_RECOMMENDED);
 }
 
+function setManualProfileFromChannels(band,value){
+  const val=compactChannels(value);
+  if(band==='24'){
+    const sel=$('wifi24Profile');
+    if(!sel)return;
+    if(val==='')sel.value='off';
+    else{sel.value='custom';$('wifi24CustomChannels').value=val;}
+  }else{
+    const sel=$('wifi5Profile');
+    if(!sel)return;
+    if(val==='')sel.value='off';
+    else{sel.value='custom';$('wifi5CustomChannels').value=val;}
+  }
+}
+
 function applyLoadedScanProfileConfig(profile,ch24,ch5,d24,d5){
   setScanProfileValue(profile);
   const v24=compactChannels(ch24);
@@ -723,8 +749,13 @@ function applyLoadedScanProfileConfig(profile,ch24,ch5,d24,d5){
 
   if($('wifi24Channels'))$('wifi24Channels').value=v24;
   if($('wifi5Channels'))$('wifi5Channels').value=v5;
-  setProfileFromChannels('24',v24);
-  setProfileFromChannels('5',v5);
+  if(normalizeScanProfile(profile)==='custom'){
+    setManualProfileFromChannels('24',v24);
+    setManualProfileFromChannels('5',v5);
+  }else{
+    setProfileFromChannels('24',v24);
+    setProfileFromChannels('5',v5);
+  }
   setDwellFromConfig('wifi24',d24v);
   setDwellFromConfig('wifi5',d5v);
 
@@ -761,7 +792,12 @@ function updateChannelProfileVisibility(profileChanged=false){
     applyKgRecommendedProfileValues();
     if(profileChanged&&$('bleEnabled'))$('bleEnabled').value='true';
   }
-  if(custom&&profileChanged&&$('bleEnabled'))$('bleEnabled').value='true';
+  if(custom&&profileChanged){
+    setManualProfileFromChannels('24',$('wifi24Channels')?.value||'');
+    setManualProfileFromChannels('5',$('wifi5Channels')?.value||'');
+    if($('bleEnabled'))$('bleEnabled').value='true';
+    clearBleTimingValues();
+  }
 
   for(const id of ['wifi24Profile','wifi5Profile','wifi24CustomChannels','wifi5CustomChannels','wifi24DwellMode','wifi24DwellInput','wifi5DwellMode','wifi5DwellInput']){
     const el=$(id);
