@@ -216,29 +216,34 @@ static void drainBlePendingToLog() {
   GpsLogSnapshot gpsSnap = captureGpsLogSnapshot();
   String firstSeen = iso8601NowUTC();
   uint16_t drained = 0;
-  uint16_t wrote = 0;
+  uint16_t csvWrote = 0;
+  uint16_t startupRouted = 0;
 
   BleObservation obs;
   while (bleScannerConsume(obs)) {
     drained++;
     if (startupQueue) {
-      if (startupGpsBackfillQueueBle(obs, firstSeen)) wrote++;
+      if (startupGpsBackfillQueueBle(obs, firstSeen)) startupRouted++;
     } else {
       if (appendBleRow(obs, firstSeen,
                        gpsSnap.lat, gpsSnap.lon, gpsSnap.altM, gpsSnap.accM)) {
-        wrote++;
+        csvWrote++;
       }
     }
   }
 
-  if (!startupQueue && wrote > 0 && logFile) {
+  if (!startupQueue && csvWrote > 0 && logFile) {
     logFile.flush();
     Serial.printf("[KG-BLE] Wrote %u row(s)%s%s\n",
-                  wrote,
+                  csvWrote,
                   gpsSnap.usedFix ? " (GPS fix)" : "",
                   gpsSnap.usedCache ? " (GPS cache)" : "");
   }
-  bleScannerDiagNoteDrain(drained, wrote);
+  if (startupQueue) {
+    bleScannerDiagNoteStartupBackfill(drained, startupRouted);
+  } else {
+    bleScannerDiagNoteDrain(drained, csvWrote);
+  }
   bleScannerDiagAfterDrain();
 }
 

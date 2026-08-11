@@ -38,6 +38,7 @@ struct BleDiagSnapshot {
   uint32_t uniqueAccepted;
   uint32_t duplicateRejected;
   uint32_t csvRowsWritten;
+  uint32_t startupBackfillRowsRouted;
   uint32_t stopCount;
   uint32_t droppedTotal;
   uint32_t burstStartMs;
@@ -49,6 +50,7 @@ struct BleDiagSnapshot {
   uint32_t burstUniqueAccepted;
   uint32_t burstDuplicateRejected;
   uint32_t burstCsvRowsWritten;
+  uint32_t burstStartupBackfillRowsRouted;
   uint16_t pendingDepth;
   bool     ready;
   bool     active;
@@ -67,4 +69,5 @@ const char* bleScannerLastStartFailureReason();
 BleDiagSnapshot bleScannerDiagSnapshot();
 void     bleScannerDiagPrintConfig();
 void     bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows);
+void     bleScannerDiagNoteStartupBackfill(uint16_t pendingRows, uint16_t routedRows);
 void     bleScannerDiagAfterDrain();
