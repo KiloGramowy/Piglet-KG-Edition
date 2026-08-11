@@ -42,9 +42,9 @@ possible custom channel and dwell combination has been hardware tested.
 🐷 Original Piglet all-channel scanning remains available as the default/fallback
 mode.
 
-🧪 Available on `kg-c5-ble-lab` for BLE field tuning:
+✅ Included in the `kg-c5-ble-lab` KG Recommended profile:
 
-- 🧪 WebUI BLE scan duration / every-N-cycle controls
+- ✅ BLE timing: `1000 ms` / every `5` Wi-Fi cycles
 
 ## Current KG Configuration
 
@@ -80,8 +80,9 @@ bleEveryNCycles=5
 ```
 
 These BLE values work on the project XIAO ESP32-C5 and are the fixed BLE timing
-used by the WebUI `KG Recommended` scanning profile. They remain field-tuning
-starting values, not a claim of universal optimum.
+used by the WebUI `KG Recommended` scanning profile when BLE is enabled. BLE can
+still be disabled by the user. This is a hardware-tested KG Recommended
+starting profile, not a claim of universal optimum.
 
 ## KG Edition Changes
 
@@ -182,7 +183,8 @@ wifi5DwellMs=
 - Empty or `0` dwell values fall back to the existing `scanMode` dwell timing.
 - `20 ms` dwell is accepted but experimental.
 - The KG Recommended WebUI profile writes `1,6,11` / `36,40,44,48` with
-  `110 ms` / `100 ms` dwell.
+  `110 ms` / `100 ms` dwell, plus BLE timing `1000 ms` / every `5` Wi-Fi
+  cycles when BLE is enabled.
 
 ## KG Edition Roadmap
 
@@ -202,14 +204,15 @@ lab branch and are not yet validated as KG Recommended behavior:
     unsuccessful
   - If "Both" is selected, require confirmed successful upload to both services
     before deletion
-- 🚧 BLE scan timing, comparative field profiles, and Wi-Fi/BLE coexistence
-  tuning remain experimental on `kg-c5-ble-lab`.
+- 🚧 Further BLE comparative field profiles and Wi-Fi/BLE coexistence tuning
+  remain experimental on `kg-c5-ble-lab`.
 - 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
 
-🚧 BLE branch work is still experimental. Startup GPS Backfill is hardware
-validated, including BLE startup rows. BLE timing controls are available for
-field tuning, but no KG Recommended BLE preset has been validated yet.
+🚧 Further BLE tuning remains lab work. Startup GPS Backfill is hardware
+validated, including BLE startup rows. KG Recommended BLE timing is
+hardware-tested at `1000 ms` / every `5` Wi-Fi cycles; other BLE profiles are
+not yet validated.
 
 ## Upstream and Credits
 
