@@ -14,7 +14,6 @@
 #endif
 
 static const uint16_t BLE_PENDING_CAPACITY = 128;
-static const uint16_t BLE_DEDUPE_CAPACITY = 200;
 
 struct BleObservation {
   char     addr[18];         // "AA:BB:CC:DD:EE:FF"
@@ -41,6 +40,9 @@ struct BleDiagSnapshot {
   uint32_t startupBackfillRowsRouted;
   uint32_t stopCount;
   uint32_t droppedTotal;
+  uint32_t dedupeCapacity;
+  uint32_t dedupeGrowCount;
+  uint32_t dedupeDegradedAccepted;
   uint32_t burstStartMs;
   uint32_t burstStopMs;
   uint32_t burstElapsedMs;
@@ -52,6 +54,7 @@ struct BleDiagSnapshot {
   uint32_t burstCsvRowsWritten;
   uint32_t burstStartupBackfillRowsRouted;
   uint16_t pendingDepth;
+  bool     dedupeDegraded;
   bool     ready;
   bool     active;
 };

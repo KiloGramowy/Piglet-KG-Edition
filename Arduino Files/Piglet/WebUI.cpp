@@ -183,15 +183,17 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   .pill.warn{border-color:rgba(251,191,36,.35);background:var(--warnDim)}
 
   /* ---- Key-value grid ---- */
+  .foundGrid{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:8px}
+  @media(min-width:700px){.foundGrid{grid-template-columns:repeat(3,1fr)}}
   .kv{display:grid;grid-template-columns:1fr;gap:8px}
   @media(min-width:700px){.kv{grid-template-columns:1fr 1fr}}
-  .kv>div{
+  .foundGrid>div,.kv>div{
     display:flex;justify-content:space-between;align-items:center;
     gap:12px;border:1px solid var(--border);
     border-radius:8px;padding:10px 12px;
     background:var(--input);transition:border-color .15s;
   }
-  .kv>div:hover{border-color:color-mix(in srgb,var(--border) 50%,var(--accent))}
+  .foundGrid>div:hover,.kv>div:hover{border-color:color-mix(in srgb,var(--border) 50%,var(--accent))}
   .k{color:var(--muted);font-size:13px}
   .v{font-weight:600;font-size:14px;color:var(--text);text-align:right}
 
@@ -276,15 +278,20 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="pill" id="pillSd"><span class="dot"></span>SD: —</div>
       <div class="pill" id="pillGps"><span class="dot"></span>GPS: —</div>
       <div class="pill" id="pillSta"><span class="dot"></span>STA: —</div>
+      <div class="pill" id="pillBle"><span class="dot"></span>BLE: —</div>
       <div class="pill" id="pillWigle"><span class="dot"></span>WiGLE: —</div>
     </div>
 
-    <div class="kv">
+    <div class="foundGrid">
       <div><span class="k">2.4 GHz Found</span><span class="v" id="vFound2g">—</span></div>
       <div id="row5g"><span class="k">5 GHz Found</span><span class="v" id="vFound5g">—</span></div>
+      <div><span class="k">BLE Found</span><span class="v" id="vFoundBle">—</span></div>
+    </div>
+
+    <div class="kv">
       <div><span class="k">STA IP</span><span class="v" id="vStaIp">—</span></div>
       <div><span class="k">AP Clients Seen</span><span class="v" id="vApSeen">—</span></div>
-      <div><span class="k">Last Upload</span>
+      <div><span class="k">Last Upload</span><span class="v" id="vLastUpload">—</span></div>
     </div>
 
     <details class="mt-md">
@@ -353,16 +360,16 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         <input id="gpsCacheMinutes" type="number" value="3" min="1" max="10080" step="1">
         <div class="muted" style="font-size:12px;margin-top:5px;line-height:1.35">How long Piglet may reuse the last valid GPS position after GPS fix is lost. Default: 3 minutes. KG field-testing profile: 720 minutes / 12 hours. Long values may associate detections with an older position if the device keeps moving while GPS is unavailable.</div>
       </div>
-      <div><label>Home SSID</label><input id="homeSsid" placeholder="Your home Wi-Fi"></div>
-      <div><label>Home PSK</label><input id="homePsk" type="password" placeholder="Password"></div>
-      <div><label>Wardriver SSID</label><input id="wardriverSsid"></div>
-      <div><label>Wardriver PSK</label><input id="wardriverPsk" type="password"></div>
       <div><label>Scan Mode</label>
         <select id="scanMode">
           <option value="aggressive">Aggressive</option>
           <option value="powersaving">Power Saving</option>
         </select>
       </div>
+      <div><label>Home SSID</label><input id="homeSsid" placeholder="Your home Wi-Fi"></div>
+      <div><label>Wardriver SSID</label><input id="wardriverSsid"></div>
+      <div><label>Home PSK</label><input id="homePsk" type="password" placeholder="Password" onfocus="prepareSecretEdit(this)"></div>
+      <div><label>Wardriver PSK</label><input id="wardriverPsk" type="password" onfocus="prepareSecretEdit(this)"></div>
       <div class="inner-card cfg-section">
         <h4>Scanning (Solo)</h4>
         <div class="cfg-help">Choose how Piglet scans Wi-Fi. Original keeps the standard all-channel behavior. KG Recommended uses the XIAO ESP32-C5 profile validated during KG field testing. Custom gives full control over channels and dwell.</div>
@@ -569,7 +576,36 @@ function formatBytes(b){
 }
 
 /* ---- Masked config keys that should not be filled back into form ---- */
-const maskedKeys=new Set(['homePsk']);
+const SECRET_SAVED_VALUE='************';
+const SECRET_SAVED_FLAG='saved';
+const maskedKeys=new Set(['homePsk','wardriverPsk']);
+
+function setSecretFieldState(id,value){
+  const el=$(id);if(!el)return;
+  if(value==='(set)'){
+    el.value=SECRET_SAVED_VALUE;
+    el.dataset.secretState=SECRET_SAVED_FLAG;
+  }else{
+    el.value='';
+    delete el.dataset.secretState;
+  }
+}
+
+function prepareSecretEdit(el){
+  if(!el)return;
+  if(el.dataset.secretState===SECRET_SAVED_FLAG){
+    el.value='';
+    delete el.dataset.secretState;
+  }
+}
+
+function shouldSkipSavedSecret(id,value){
+  if(!maskedKeys.has(id))return false;
+  const v=String(value??'');
+  const el=$(id);
+  return v===''||v==='(set)'||v===SECRET_SAVED_VALUE||
+    (el&&el.dataset.secretState===SECRET_SAVED_FLAG);
+}
 
 const WIFI24_RECOMMENDED='1,6,11';
 const WIFI24_ALL='1,2,3,4,5,6,7,8,9,10,11,12,13,14';
@@ -854,6 +890,20 @@ function prepareChannelProfileSave(){
 }
 
 /* ---- Status ---- */
+function updateBleStatusPill(j){
+  const enabled=j.bleEnabled===true||j.bleEnabled==='true';
+  const unique=Number(j.bleUniqueCount||0);
+  if(!enabled){
+    setPill('pillBle','BLE: OFF','warn');
+  }else if(j.bleDedupeDegraded){
+    setPill('pillBle','BLE: DEGRADED \u00b7 B:'+unique,'warn');
+  }else if(j.bleActive){
+    setPill('pillBle','BLE: SCANNING \u00b7 B:'+unique,'ok');
+  }else{
+    setPill('pillBle','BLE: READY \u00b7 B:'+unique,'ok');
+  }
+}
+
 async function loadStatus(){
   try{
     const r=await fetch('/status.json');
@@ -863,12 +913,14 @@ async function loadStatus(){
     setPill('pillSd','SD: '+(j.sdOk?'OK':'FAIL'),j.sdOk?'ok':'bad');
     setPill('pillGps','GPS: '+(j.gpsFix?'LOCK':'NO FIX'),j.gpsFix?'ok':'warn');
     setPill('pillSta','STA: '+(j.wifiConnected?'CONNECTED':'OFF'),j.wifiConnected?'ok':'warn');
+    updateBleStatusPill(j);
 
     const wCls=(j.wigleTokenStatus===1)?'ok':(j.wigleTokenStatus===-1?'bad':'warn');
     setPill('pillWigle',wigleStatusText(j.wigleTokenStatus),wCls);
 
     setText('vFound2g',j.found2g);
     setText('vFound5g',j.found5g);
+    setText('vFoundBle',j.bleUniqueCount);
 
     const row5g=$('row5g');
     if(row5g)row5g.style.display=(j.c5Connected||j.found5g)?'':'none';
@@ -884,10 +936,13 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
-        if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
+        if(maskedKeys.has(k)){
+          setSecretFieldState(k,v);
+          continue;
+        }
         const el=$(k);
         if(el)el.value=v;
       }
@@ -980,7 +1035,7 @@ async function doSave(){
   for(const k of keys){
     const el=$(k);
     const v=el?(el.value??''):'';
-    if(maskedKeys.has(k)&&v==='')continue;
+    if(shouldSkipSavedSecret(k,v))continue;
     body+=k+'='+String(v).replace(/\r?\n/g,' ')+'\n';
   }
   const r=await fetch('/saveConfig',{method:'POST',headers:{'Content-Type':'text/plain'},body});
@@ -1139,6 +1194,8 @@ function handleApTimer(j){
 async function pollUpload(){
   try{
     const r=await fetch('/status.json');const j=await r.json();
+    updateBleStatusPill(j);
+    setText('vFoundBle',j.bleUniqueCount);
     const up=!!j.uploading;
     const done=j.uploadDoneFiles||0;
     const total=j.uploadTotalFiles||0;
@@ -1162,6 +1219,16 @@ loadStatus();loadFiles();
 )HTML";
 
 // ---------------- Handlers ----------------
+
+static const char* WEB_SAVED_SECRET_SENTINEL = "************";
+
+static bool isWifiPskKey(const String& k) {
+  return k == "homePsk" || k == "wardriverPsk";
+}
+
+static bool isSavedSecretPlaceholder(const String& v) {
+  return v.length() == 0 || v == "(set)" || v == WEB_SAVED_SECRET_SENTINEL;
+}
 
 static void handlePing() {
   Serial.printf("[WEB] /ping  heap=%u\n", ESP.getFreeHeap());
@@ -1188,9 +1255,10 @@ static void handleStatus() {
   // Heap allocation: StaticJsonDocument<N> puts N bytes on the Arduino loop
   // task stack (8192 bytes). Even 1024 bytes plus WebServer call chain overhead
   // risks a stack overflow.  DynamicJsonDocument allocates from the heap instead.
-  DynamicJsonDocument doc(2560);
+  DynamicJsonDocument doc(2816);
 
   bool allowScan = scanningEnabled && sdOk && (userScanOverride || !autoPaused);
+  BleDiagSnapshot bleSnap = bleScannerDiagSnapshot();
   doc["scanningEnabled"] = scanningEnabled;
   doc["allowScan"] = allowScan;
   doc["userScanOverride"] = userScanOverride;
@@ -1228,6 +1296,10 @@ static void handleStatus() {
   doc["uploadLastResult"] = uploadLastResult;
   doc["wigleTokenStatus"] = wigleTokenStatus;
   doc["wigleLastHttpCode"] = wigleLastHttpCode;
+  doc["bleEnabled"] = cfg.bleEnabled;
+  doc["bleActive"] = bleSnap.active;
+  doc["bleUniqueCount"] = bleSnap.uniqueAccepted;
+  doc["bleDedupeDegraded"] = bleSnap.dedupeDegraded;
 
   JsonObject c = doc.createNestedObject("config");
   c["wigleBasicToken"] = cfg.wigleBasicToken;
@@ -1235,7 +1307,7 @@ static void handleStatus() {
   c["homeSsid"] = cfg.homeSsid;
   c["homePsk"] = cfg.homePsk.length() ? "(set)" : "";
   c["wardriverSsid"] = cfg.wardriverSsid;
-  c["wardriverPsk"] = cfg.wardriverPsk;
+  c["wardriverPsk"] = cfg.wardriverPsk.length() ? "(set)" : "";
   c["gpsBaud"] = cfg.gpsBaud;
   c["gpsCacheMinutes"] = cfg.gpsCacheMinutes;
   c["wifi24Channels"] = channelListToString(cfg.wifi24Channels, cfg.wifi24ChannelCount);
@@ -1412,15 +1484,21 @@ static void handleSaveConfig() {
 
     cfg.wigleBasicToken = doc["wigleBasicToken"] | cfg.wigleBasicToken;
     cfg.homeSsid        = doc["homeSsid"]        | cfg.homeSsid;
-    cfg.homePsk         = doc["homePsk"]         | cfg.homePsk;
     cfg.wardriverSsid   = doc["wardriverSsid"]   | cfg.wardriverSsid;
-    cfg.wardriverPsk    = doc["wardriverPsk"]    | cfg.wardriverPsk;
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
     cfg.scanProfile     = doc["scanProfile"]     | cfg.scanProfile;
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
+    if (doc.containsKey("homePsk")) {
+      String homePsk = doc["homePsk"] | "";
+      if (!isSavedSecretPlaceholder(homePsk)) cfg.homePsk = homePsk;
+    }
+    if (doc.containsKey("wardriverPsk")) {
+      String wardriverPsk = doc["wardriverPsk"] | "";
+      if (!isSavedSecretPlaceholder(wardriverPsk)) cfg.wardriverPsk = wardriverPsk;
+    }
     validateConfig();
 
     any = true;
@@ -1435,6 +1513,10 @@ static void handleSaveConfig() {
 
       String k, v;
       if (parseKeyValueLine(line, k, v)) {
+        if (isWifiPskKey(k) && isSavedSecretPlaceholder(v)) {
+          any = true;
+          continue;
+        }
         cfgAssignKV(k, v);
         any = true;
       }
