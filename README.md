@@ -49,7 +49,9 @@ Profile meanings in WebUI:
   profile, BLE enabled on profile selection, fixed BLE timing `1000 ms` /
   every `5` Wi-Fi cycles
 - 🛠️ Custom: explicitly user-selected manual Wi-Fi and BLE tuning. Custom is
-  never selected automatically just because values match or differ.
+  never selected automatically just because values match or differ. Entering
+  Custom from a preset opens a clean manual setup; saved Custom settings are
+  restored after reboot.
 
 ✅ Included in the `kg-c5-ble-lab` KG Recommended profile:
 
