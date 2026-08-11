@@ -7,7 +7,7 @@ void   closeLogFile();
 void   appendWigleRow(const String& mac, const String& ssid, const String& auth,
                       const String& firstSeen, int channel, int rssi,
                       double lat, double lon, double altM, double accM);
-void   appendBleRow(const BleObservation& obs, const String& firstSeen,
+bool   appendBleRow(const BleObservation& obs, const String& firstSeen,
                     double lat, double lon, double altM, double accM);
 
 String normalizeSdPath(const char* dir, const char* nameIn);

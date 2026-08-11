@@ -1,9 +1,8 @@
 #include "BleScanner.h"
-
-#if PIGLET_HAS_BLE
-
 #include "Config.h"
 #include "Globals.h"
+
+#if PIGLET_HAS_BLE
 
 #include <BLEAdvertisedDevice.h>
 #include <BLEDevice.h>
@@ -21,6 +20,33 @@ struct BleKey {
   uint8_t addrType;
 };
 
+struct BleDiagState {
+  uint32_t initCount = 0;
+  uint32_t startAttempts = 0;
+  uint32_t startSuccess = 0;
+  uint32_t startFailures = 0;
+  uint32_t callbackCount = 0;
+  uint32_t pendingAccepted = 0;
+  uint32_t pendingDropped = 0;
+  uint32_t uniqueAccepted = 0;
+  uint32_t duplicateRejected = 0;
+  uint32_t csvRowsWritten = 0;
+  uint32_t stopCount = 0;
+  uint32_t burstStartMs = 0;
+  uint32_t burstStopMs = 0;
+  uint32_t burstElapsedMs = 0;
+  uint32_t burstCallbacks = 0;
+  uint32_t burstPendingAccepted = 0;
+  uint32_t burstPendingDropped = 0;
+  uint32_t burstUniqueAccepted = 0;
+  uint32_t burstDuplicateRejected = 0;
+  uint32_t burstCsvRowsWritten = 0;
+  bool burstActive = false;
+  bool firstCallbackLogged = false;
+  bool stoppedPendingReport = false;
+  bool clearResultsPending = false;
+};
+
 SemaphoreHandle_t bleMutex = nullptr;
 BLEScan* bleScan = nullptr;
 bool bleReady = false;
@@ -34,6 +60,8 @@ uint16_t pendingCount = 0;
 
 BleKey dedupe[BLE_DEDUPE_CAPACITY];
 uint16_t dedupeCount = 0;
+
+BleDiagState bleDiag;
 
 class BleLock {
 public:
@@ -49,12 +77,17 @@ private:
   bool held = false;
 };
 
-static void copyStringField(char* dest, size_t destLen, const String& src) {
+static void copyCStringField(char* dest, size_t destLen, const char* src) {
   if (!dest || destLen == 0) return;
-  size_t n = src.length();
+  if (!src) src = "";
+  size_t n = strlen(src);
   if (n >= destLen) n = destLen - 1;
-  memcpy(dest, src.c_str(), n);
+  memcpy(dest, src, n);
   dest[n] = '\0';
+}
+
+static void copyStringField(char* dest, size_t destLen, const String& src) {
+  copyCStringField(dest, destLen, src.c_str());
 }
 
 static bool normalizeUuid16(const String& raw, char out[5]) {
@@ -105,28 +138,40 @@ static bool dedupeContains(const char* addr, uint8_t addrType) {
 }
 
 static bool dedupeAdd(const char* addr, uint8_t addrType) {
-  if (dedupeContains(addr, addrType)) return false;
+  if (dedupeContains(addr, addrType)) {
+    bleDiag.duplicateRejected++;
+    bleDiag.burstDuplicateRejected++;
+    return false;
+  }
   if (dedupeCount >= BLE_DEDUPE_CAPACITY) {
     bleDropped++;
+    bleDiag.pendingDropped++;
+    bleDiag.burstPendingDropped++;
     return false;
   }
 
-  copyStringField(dedupe[dedupeCount].addr, sizeof(dedupe[dedupeCount].addr), String(addr));
+  copyCStringField(dedupe[dedupeCount].addr, sizeof(dedupe[dedupeCount].addr), addr);
   dedupe[dedupeCount].addrType = addrType;
   dedupeCount++;
   bleUniqueCount++;
+  bleDiag.uniqueAccepted++;
+  bleDiag.burstUniqueAccepted++;
   return true;
 }
 
 static bool pushPending(const BleObservation& obs) {
   if (pendingCount >= BLE_PENDING_CAPACITY) {
     bleDropped++;
+    bleDiag.pendingDropped++;
+    bleDiag.burstPendingDropped++;
     return false;
   }
 
   uint16_t idx = (uint16_t)((pendingHead + pendingCount) % BLE_PENDING_CAPACITY);
   pending[idx] = obs;
   pendingCount++;
+  bleDiag.pendingAccepted++;
+  bleDiag.burstPendingAccepted++;
   return true;
 }
 
@@ -163,18 +208,117 @@ static void copyObservation(BLEAdvertisedDevice& dev, BleObservation& obs) {
   }
 }
 
+static void fillSnapshotNoLock(BleDiagSnapshot& out) {
+  out.initCount = bleDiag.initCount;
+  out.startAttempts = bleDiag.startAttempts;
+  out.startSuccess = bleDiag.startSuccess;
+  out.startFailures = bleDiag.startFailures;
+  out.callbackCount = bleDiag.callbackCount;
+  out.pendingAccepted = bleDiag.pendingAccepted;
+  out.pendingDropped = bleDiag.pendingDropped;
+  out.uniqueAccepted = bleDiag.uniqueAccepted;
+  out.duplicateRejected = bleDiag.duplicateRejected;
+  out.csvRowsWritten = bleDiag.csvRowsWritten;
+  out.stopCount = bleDiag.stopCount;
+  out.droppedTotal = bleDropped;
+  out.burstStartMs = bleDiag.burstStartMs;
+  out.burstStopMs = bleDiag.burstStopMs;
+  out.burstElapsedMs = bleDiag.burstElapsedMs;
+  out.burstCallbacks = bleDiag.burstCallbacks;
+  out.burstPendingAccepted = bleDiag.burstPendingAccepted;
+  out.burstPendingDropped = bleDiag.burstPendingDropped;
+  out.burstUniqueAccepted = bleDiag.burstUniqueAccepted;
+  out.burstDuplicateRejected = bleDiag.burstDuplicateRejected;
+  out.burstCsvRowsWritten = bleDiag.burstCsvRowsWritten;
+  out.pendingDepth = pendingCount;
+  out.ready = bleReady;
+  out.active = bleRunning;
+}
+
+static void prepareBurstDiagNoLock(uint32_t startMs) {
+  bleDiag.burstStartMs = startMs;
+  bleDiag.burstStopMs = 0;
+  bleDiag.burstElapsedMs = 0;
+  bleDiag.burstCallbacks = 0;
+  bleDiag.burstPendingAccepted = 0;
+  bleDiag.burstPendingDropped = 0;
+  bleDiag.burstUniqueAccepted = 0;
+  bleDiag.burstDuplicateRejected = 0;
+  bleDiag.burstCsvRowsWritten = 0;
+  bleDiag.burstActive = true;
+  bleDiag.firstCallbackLogged = false;
+  bleDiag.stoppedPendingReport = false;
+  bleDiag.clearResultsPending = false;
+}
+
+static void recordBurstStop(uint32_t nowMs) {
+  BleDiagSnapshot snap = {};
+  bool shouldLog = false;
+
+  {
+    BleLock lock;
+    if (!lock.ok()) return;
+
+    if (!bleDiag.burstActive && bleDiag.burstStopMs != 0) return;
+
+    bleDiag.burstActive = false;
+    bleDiag.burstStopMs = nowMs;
+    bleDiag.burstElapsedMs = nowMs - bleDiag.burstStartMs;
+    bleDiag.stopCount++;
+    bleDiag.stoppedPendingReport = true;
+    bleDiag.clearResultsPending = true;
+    fillSnapshotNoLock(snap);
+    shouldLog = true;
+  }
+
+  if (!shouldLog) return;
+
+  Serial.printf("[KG-BLE] stop elapsed=%lu callbacks=%lu pending=%u dropped=%lu\n",
+                (unsigned long)snap.burstElapsedMs,
+                (unsigned long)snap.burstCallbacks,
+                snap.pendingDepth,
+                (unsigned long)snap.droppedTotal);
+
+  if (snap.burstCallbacks == 0) {
+    Serial.println("[KG-BLE] WARNING burst completed with zero callbacks");
+  }
+}
+
 class KgBleCallbacks : public BLEAdvertisedDeviceCallbacks {
 public:
   void onResult(BLEAdvertisedDevice advertisedDevice) override {
     BleObservation obs;
     copyObservation(advertisedDevice, obs);
-    if (strlen(obs.addr) != 17) return;
 
-    BleLock lock;
-    if (!lock.ok()) return;
+    bool logFirst = false;
+    char firstAddr[18] = {};
+    int8_t firstRssi = obs.rssi;
 
-    if (!dedupeAdd(obs.addr, obs.addrType)) return;
-    pushPending(obs);
+    {
+      BleLock lock;
+      if (!lock.ok()) return;
+
+      bleDiag.callbackCount++;
+      bleDiag.burstCallbacks++;
+
+      if (!bleDiag.firstCallbackLogged) {
+        bleDiag.firstCallbackLogged = true;
+        logFirst = true;
+        copyCStringField(firstAddr, sizeof(firstAddr), obs.addr);
+      }
+
+      if (strlen(obs.addr) != 17) {
+        bleDropped++;
+        bleDiag.pendingDropped++;
+        bleDiag.burstPendingDropped++;
+      } else if (dedupeAdd(obs.addr, obs.addrType)) {
+        pushPending(obs);
+      }
+    }
+
+    if (logFirst) {
+      Serial.printf("[KG-BLE] first callback addr=%s rssi=%d\n", firstAddr, (int)firstRssi);
+    }
   }
 };
 
@@ -188,6 +332,11 @@ static uint32_t safeBleDurationMs() {
   return d;
 }
 
+static uint32_t bleApiDurationSeconds(uint32_t durationMs) {
+  uint32_t seconds = (durationMs + 999UL) / 1000UL;
+  return seconds == 0 ? 1 : seconds;
+}
+
 } // namespace
 
 void bleScannerBegin() {
@@ -195,14 +344,24 @@ void bleScannerBegin() {
 
   if (!bleMutex) bleMutex = xSemaphoreCreateMutex();
   if (!bleMutex) {
-    Serial.println("[BLE] Mutex allocation failed");
+    Serial.println("[KG-BLE] init FAILED mutex allocation");
     return;
   }
 
-  BLEDevice::init("piglet");
+  {
+    BleLock lock;
+    if (lock.ok()) bleDiag.initCount++;
+  }
+
+  bool initOk = BLEDevice::init("piglet");
+  if (!initOk) {
+    Serial.println("[KG-BLE] init FAILED BLEDevice::init");
+    return;
+  }
+
   bleScan = BLEDevice::getScan();
   if (!bleScan) {
-    Serial.println("[BLE] BLEDevice::getScan failed");
+    Serial.println("[KG-BLE] init FAILED BLEDevice::getScan");
     return;
   }
 
@@ -213,7 +372,7 @@ void bleScannerBegin() {
   bleScan->setDuplicateFilter(true);
 
   bleReady = true;
-  Serial.println("[BLE] Passive scanner ready (interval=100ms window=100ms)");
+  Serial.println("[KG-BLE] init OK");
 }
 
 bool bleScannerReady() {
@@ -225,43 +384,79 @@ bool bleScannerStartBurst() {
   if (!bleReady) bleScannerBegin();
   if (!bleReady || !bleScan || bleRunning) return false;
 
+  uint32_t startMs = millis();
   uint32_t durationMs = safeBleDurationMs();
-  bool ok = bleScan->start(0, nullptr, false);
-  if (!ok) {
-    Serial.println("[BLE] Failed to start passive scan");
+  uint32_t apiSeconds = bleApiDurationSeconds(durationMs);
+
+  {
+    BleLock lock;
+    if (lock.ok()) {
+      bleDiag.startAttempts++;
+      prepareBurstDiagNoLock(startMs);
+    }
+  }
+
+  Serial.printf("[KG-BLE] start attempt duration=%lu\n", (unsigned long)durationMs);
+
+  bool ok = bleScan->start(apiSeconds, nullptr, false);
+  bool active = ok && bleScan->isScanning();
+
+  {
+    BleLock lock;
+    if (lock.ok()) {
+      if (ok && active) bleDiag.startSuccess++;
+      else {
+        bleDiag.startFailures++;
+        bleDiag.burstActive = false;
+        bleDiag.clearResultsPending = true;
+      }
+    }
+  }
+
+  Serial.printf("[KG-BLE] start result=%s active=%u apiDurationSeconds=%lu\n",
+                (ok ? "success" : "failure"),
+                active ? 1 : 0,
+                (unsigned long)apiSeconds);
+
+  if (!ok || !active) {
+    if (bleScan) bleScan->clearResults();
     return false;
   }
 
   bleRunning = true;
-  bleEndsAtMs = millis() + durationMs;
-  Serial.printf("[BLE] Passive burst start (%lu ms)\n", (unsigned long)durationMs);
+  bleEndsAtMs = startMs + durationMs;
   return true;
 }
 
 void bleScannerStop() {
+  bool wasRunning = bleRunning;
+
   if (!bleReady || !bleScan) {
     bleRunning = false;
     return;
   }
 
-  if (bleRunning || bleScan->isScanning()) {
+  bool stackActive = bleScan->isScanning();
+  if (stackActive) {
     bleScan->stop();
   }
-  bleScan->clearResults();
-  bleRunning = false;
+
+  if (wasRunning || stackActive) {
+    bleRunning = false;
+    recordBurstStop(millis());
+  } else {
+    bleRunning = false;
+  }
 }
 
 void bleScannerTick() {
-  if (!bleReady || !bleScan) return;
+  if (!bleReady || !bleScan || !bleRunning) return;
 
-  if (bleRunning && (int32_t)(millis() - bleEndsAtMs) >= 0) {
+  if ((int32_t)(millis() - bleEndsAtMs) >= 0) {
     bleScannerStop();
-    Serial.printf("[BLE] Passive burst end (unique=%lu dropped=%lu)\n",
-                  (unsigned long)bleUniqueCount,
-                  (unsigned long)bleDropped);
-  } else if (bleRunning && !bleScan->isScanning()) {
-    bleScan->clearResults();
+  } else if (!bleScan->isScanning()) {
     bleRunning = false;
+    recordBurstStop(millis());
   }
 }
 
@@ -289,6 +484,79 @@ uint32_t bleScannerDroppedCount() {
   return lock.ok() ? bleDropped : 0;
 }
 
+BleDiagSnapshot bleScannerDiagSnapshot() {
+  BleDiagSnapshot snap = {};
+  BleLock lock;
+  if (lock.ok()) fillSnapshotNoLock(snap);
+  return snap;
+}
+
+void bleScannerDiagPrintConfig() {
+  Serial.printf("[KG-BLE] config enabled=%u duration=%u everyCycles=%u\n",
+                cfg.bleEnabled ? 1 : 0,
+                cfg.bleScanDurationMs,
+                cfg.bleEveryNCycles);
+}
+
+void bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows) {
+  if (pendingRows == 0 && csvRows == 0) return;
+
+  BleDiagSnapshot snap = {};
+  {
+    BleLock lock;
+    if (!lock.ok()) return;
+
+    bleDiag.csvRowsWritten += csvRows;
+    bleDiag.burstCsvRowsWritten += csvRows;
+    fillSnapshotNoLock(snap);
+  }
+
+  Serial.printf("[KG-BLE] drain accepted=%u unique=%lu duplicates=%lu csv=%lu\n",
+                pendingRows,
+                (unsigned long)snap.uniqueAccepted,
+                (unsigned long)snap.duplicateRejected,
+                (unsigned long)snap.csvRowsWritten);
+}
+
+void bleScannerDiagAfterDrain() {
+  BleDiagSnapshot snap = {};
+  bool shouldReport = false;
+  bool shouldWarnNoCsv = false;
+  bool shouldClear = false;
+
+  {
+    BleLock lock;
+    if (!lock.ok()) return;
+
+    if (bleDiag.stoppedPendingReport && pendingCount == 0) {
+      fillSnapshotNoLock(snap);
+      shouldReport = true;
+      shouldWarnNoCsv = (snap.burstCallbacks > 0 && snap.burstCsvRowsWritten == 0);
+      shouldClear = bleDiag.clearResultsPending;
+      bleDiag.stoppedPendingReport = false;
+      bleDiag.clearResultsPending = false;
+    }
+  }
+
+  if (!shouldReport) return;
+
+  if (shouldWarnNoCsv) {
+    Serial.println("[KG-BLE] WARNING callbacks received but no BLE CSV rows written");
+  }
+
+  Serial.printf("[KG-BLE] summary starts=%lu callbacks=%lu pending=%u unique=%lu csv=%lu dropped=%lu\n",
+                (unsigned long)snap.startSuccess,
+                (unsigned long)snap.callbackCount,
+                snap.pendingDepth,
+                (unsigned long)snap.uniqueAccepted,
+                (unsigned long)snap.csvRowsWritten,
+                (unsigned long)snap.droppedTotal);
+
+  if (shouldClear && bleScan && !bleRunning && !bleScan->isScanning()) {
+    bleScan->clearResults();
+  }
+}
+
 #else
 
 void bleScannerBegin() {}
@@ -300,5 +568,15 @@ bool bleScannerIsScanning() { return false; }
 bool bleScannerHasPending() { return false; }
 bool bleScannerConsume(BleObservation&) { return false; }
 uint32_t bleScannerDroppedCount() { return 0; }
+BleDiagSnapshot bleScannerDiagSnapshot() { return {}; }
+void bleScannerDiagPrintConfig() {
+  Serial.printf("[KG-BLE] config enabled=%u duration=%u everyCycles=%u\n",
+                cfg.bleEnabled ? 1 : 0,
+                cfg.bleScanDurationMs,
+                cfg.bleEveryNCycles);
+  Serial.println("[KG-BLE] init FAILED BLE library unavailable");
+}
+void bleScannerDiagNoteDrain(uint16_t, uint16_t) {}
+void bleScannerDiagAfterDrain() {}
 
 #endif

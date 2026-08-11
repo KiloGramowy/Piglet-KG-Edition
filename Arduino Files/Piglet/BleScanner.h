@@ -25,6 +25,33 @@ struct BleObservation {
   uint8_t  channel;          // 0 = unknown/not exposed by local API
 };
 
+struct BleDiagSnapshot {
+  uint32_t initCount;
+  uint32_t startAttempts;
+  uint32_t startSuccess;
+  uint32_t startFailures;
+  uint32_t callbackCount;
+  uint32_t pendingAccepted;
+  uint32_t pendingDropped;
+  uint32_t uniqueAccepted;
+  uint32_t duplicateRejected;
+  uint32_t csvRowsWritten;
+  uint32_t stopCount;
+  uint32_t droppedTotal;
+  uint32_t burstStartMs;
+  uint32_t burstStopMs;
+  uint32_t burstElapsedMs;
+  uint32_t burstCallbacks;
+  uint32_t burstPendingAccepted;
+  uint32_t burstPendingDropped;
+  uint32_t burstUniqueAccepted;
+  uint32_t burstDuplicateRejected;
+  uint32_t burstCsvRowsWritten;
+  uint16_t pendingDepth;
+  bool     ready;
+  bool     active;
+};
+
 void     bleScannerBegin();
 bool     bleScannerReady();
 bool     bleScannerStartBurst();
@@ -34,3 +61,7 @@ bool     bleScannerIsScanning();
 bool     bleScannerHasPending();
 bool     bleScannerConsume(BleObservation& out);
 uint32_t bleScannerDroppedCount();
+BleDiagSnapshot bleScannerDiagSnapshot();
+void     bleScannerDiagPrintConfig();
+void     bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows);
+void     bleScannerDiagAfterDrain();
