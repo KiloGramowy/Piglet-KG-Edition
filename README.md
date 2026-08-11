@@ -45,9 +45,11 @@ mode.
 Profile meanings in WebUI:
 
 - 🐷 Original Piglet: upstream-style Wi-Fi scanning, KG BLE disabled
-- ✅ KG Recommended: hardware-tested KG Wi-Fi profile plus fixed BLE timing
-  `1000 ms` / every `5` Wi-Fi cycles when BLE is enabled
-- 🧪 Custom: manual Wi-Fi and BLE timing experiments
+- 🔥 KG Recommended: default for fresh/legacy configs, hardware-tested KG Wi-Fi
+  profile, BLE enabled on profile selection, fixed BLE timing `1000 ms` /
+  every `5` Wi-Fi cycles
+- 🛠️ Custom: explicitly user-selected manual Wi-Fi and BLE tuning. Custom is
+  never selected automatically just because values match or differ.
 
 ✅ Included in the `kg-c5-ble-lab` KG Recommended profile:
 
@@ -68,6 +70,7 @@ recommendation, not an upstream Piglet default.
 For the hardware-tested XIAO ESP32-C5 scanning profile:
 
 ```ini
+scanProfile=kg
 wifi24Channels=1,6,11
 wifi5Channels=36,40,44,48
 wifi24DwellMs=110
@@ -589,21 +592,31 @@ gpsCacheMinutes=3
 scanMode=aggressive
 
 # ------------------------------------------------------------
-# Solo Wi-Fi Channel Profiles (KG Edition)
+# Solo Scan Profile (KG Edition)
 # ------------------------------------------------------------
-# Leave both channel lists empty for Original Piglet all-channel scanning.
+# Explicit profile identity: original, kg, or custom.
+# Missing/invalid legacy values default to kg.
 # KG tested XIAO ESP32-C5 profile:
+#   scanProfile=kg
 #   wifi24Channels=1,6,11
 #   wifi5Channels=36,40,44,48
 #   wifi24DwellMs=110
 #   wifi5DwellMs=100
+#   bleEnabled=true
+#   bleScanDurationMs=1000
+#   bleEveryNCycles=5
+# Custom is selected only when scanProfile=custom.
 # Empty or 0 dwell values use the scanMode-derived dwell timing.
 # Valid explicit dwell range: 20-1500 ms. 20 ms is experimental.
 
-wifi24Channels=
-wifi5Channels=
-wifi24DwellMs=
-wifi5DwellMs=
+scanProfile=kg
+wifi24Channels=1,6,11
+wifi5Channels=36,40,44,48
+wifi24DwellMs=110
+wifi5DwellMs=100
+bleEnabled=true
+bleScanDurationMs=1000
+bleEveryNCycles=5
 
 # ------------------------------------------------------------
 # Speed Units (display only)
