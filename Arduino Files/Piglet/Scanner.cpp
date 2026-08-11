@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "GPS.h"
 #include "SDUtils.h"
+#include "StartupGpsBackfill.h"
 
 static String authModeToString(wifi_auth_mode_t m) {
   switch (m) {
@@ -28,6 +29,14 @@ bool     lastGpsValid   = false;
 double   lastLat = 0, lastLon = 0, lastAlt = 0, lastAcc = 0;
 uint32_t lastGpsValidMs = 0;          // millis() when position was last cached
 static uint32_t completedWifiCycles = 0;
+static uint32_t customLastCycleCompleteMs = 0;
+static bool     customScanInProgress = false;
+static uint8_t  customChannelIndex = 0;
+static uint8_t  customActiveChannel = 0;
+static uint8_t  customFailureCount = 0;
+static uint32_t normalLastScanStartMs = 0;
+static bool     normalScanInProgress = false;
+static uint8_t  normalZeroScanCount = 0;
 
 static uint32_t gpsCacheTimeoutMs() {
   uint32_t minutes = cfg.gpsCacheMinutes;
@@ -65,14 +74,15 @@ static void processScanResults(int n) {
   if (n <= 0) { WiFi.scanDelete(); return; }
 
   String firstSeen = iso8601NowUTC();
+  bool startupQueue = startupGpsBackfillAcceptingPending();
   double lat = 0, lon = 0, altM = 0, accM = 0;
-  if (gpsHasFix) {
+  if (!startupQueue && gpsHasFix) {
     lat  = gps.location.lat();
     lon  = gps.location.lng();
     altM = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
     accM = gps.hdop.isValid()     ? gps.hdop.hdop()       : 0.0;
     // lastLat/lastLon is maintained by loop() — no update here.
-  } else if (lastGpsValid && (millis() - lastGpsValidMs) <= gpsCacheTimeoutMs()) {
+  } else if (!startupQueue && lastGpsValid && (millis() - lastGpsValidMs) <= gpsCacheTimeoutMs()) {
     // Use last-known position (quality-gated, configurable expiry) until fix returns
     lat = lastLat; lon = lastLon; altM = lastAlt; accM = lastAcc;
   }
@@ -96,17 +106,23 @@ static void processScanResults(int n) {
     if (is2g) networksFound2G++;
     else      networksFound5G++;
 
-    appendWigleRow(mac, ssid, authStr, firstSeen, ch, rssi, lat, lon, altM, accM);
-    wrote++;
+    if (startupQueue) {
+      if (startupGpsBackfillQueueWifi(mac, ssid, authStr, firstSeen, ch, rssi)) wrote++;
+    } else {
+      appendWigleRow(mac, ssid, authStr, firstSeen, ch, rssi, lat, lon, altM, accM);
+      wrote++;
+    }
   }
 
   WiFi.scanDelete();
 
   // Force flush after each scan batch so data reaches the SD card promptly.
   // Minimises data loss if the device loses power between scan cycles.
-  if (wrote > 0 && sdOk && logFile) logFile.flush();
+  if (!startupQueue && wrote > 0 && sdOk && logFile) logFile.flush();
 
-  Serial.printf("[SCAN] Wrote %lu rows\n", (unsigned long)wrote);
+  if (!startupQueue) {
+    Serial.printf("[SCAN] Wrote %lu rows\n", (unsigned long)wrote);
+  }
 }
 
 static uint8_t customScanTotalChannels() {
@@ -182,63 +198,100 @@ static uint32_t customDwellForChannel(uint8_t channel, uint32_t defaultDwellMs) 
   return defaultDwellMs;
 }
 
-static void doCustomChannelScan(uint32_t gapMs, uint32_t defaultDwellMs) {
-  static uint32_t lastCycleCompleteMs = 0;
-  static bool     scanInProgress     = false;
-  static uint8_t  channelIndex       = 0;
-  static uint8_t  activeChannel      = 0;
-  static uint8_t  failureCount       = 0;
+static bool serviceCustomScanInFlight(uint8_t total) {
+  if (!customScanInProgress) return false;
 
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) return true;
+
+  customScanInProgress = false;
+
+  if (n == WIFI_SCAN_FAILED || n < 0) {
+    WiFi.scanDelete();
+    recoverCustomScanIfStuck(customFailureCount);
+    if (total > 0) {
+      advanceCustomScanChannel(customChannelIndex, total, customLastCycleCompleteMs, false);
+    }
+    return false;
+  }
+
+  customFailureCount = 0;
+  Serial.printf("[SCAN] Custom channel %u complete: %d networks\n", customActiveChannel, n);
+  processScanResults(n);
+  if (total > 0) {
+    advanceCustomScanChannel(customChannelIndex, total, customLastCycleCompleteMs, true);
+  }
+  return false;
+}
+
+static void doCustomChannelScan(uint32_t gapMs, uint32_t defaultDwellMs) {
   uint8_t total = customScanTotalChannels();
   if (total == 0) return;
-  if (channelIndex >= total) channelIndex = 0;
+  if (customChannelIndex >= total) customChannelIndex = 0;
 
   logCustomScanMode(total);
 
-  if (scanInProgress) {
-    int n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_RUNNING) return;
-
-    scanInProgress = false;
-
-    if (n == WIFI_SCAN_FAILED || n < 0) {
-      WiFi.scanDelete();
-      recoverCustomScanIfStuck(failureCount);
-      advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs, false);
-      return;
-    }
-
-    failureCount = 0;
-    Serial.printf("[SCAN] Custom channel %u complete: %d networks\n", activeChannel, n);
-    processScanResults(n);
-    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs, true);
+  if (customScanInProgress) {
+    serviceCustomScanInFlight(total);
     return;
   }
 
-  if (channelIndex == 0 && millis() - lastCycleCompleteMs < gapMs) return;
+  if (customChannelIndex == 0 && millis() - customLastCycleCompleteMs < gapMs) return;
 
-  uint8_t channel = customScanChannelAt(channelIndex);
+  uint8_t channel = customScanChannelAt(customChannelIndex);
   uint32_t dwellMs = customDwellForChannel(channel, defaultDwellMs);
   int16_t rc = WiFi.scanNetworks(/*async*/true, /*show_hidden*/true,
                                  /*passive*/false, dwellMs, channel);
   if (rc == WIFI_SCAN_RUNNING || rc == 0) {
-    activeChannel = channel;
-    scanInProgress = true;
+    customActiveChannel = channel;
+    customScanInProgress = true;
     Serial.printf("[SCAN] Custom channel scan started (ch=%u, dwell=%lu ms)\n",
                   channel, (unsigned long)dwellMs);
   } else {
     WiFi.scanDelete();
     Serial.printf("[SCAN] Custom channel %u start failed (%d)\n", channel, rc);
-    recoverCustomScanIfStuck(failureCount);
-    advanceCustomScanChannel(channelIndex, total, lastCycleCompleteMs, false);
+    recoverCustomScanIfStuck(customFailureCount);
+    advanceCustomScanChannel(customChannelIndex, total, customLastCycleCompleteMs, false);
   }
 }
 
-void doScanOnce() {
-  static uint32_t lastScanStartMs  = 0;
-  static bool     scanInProgress   = false;
-  static uint8_t  zeroScanCount    = 0;
+static bool serviceNormalScanInFlight() {
+  if (!normalScanInProgress) return false;
 
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_RUNNING) return true;
+
+  normalScanInProgress = false;
+  normalLastScanStartMs = millis();
+
+  if (n == WIFI_SCAN_FAILED || n < 0) {
+    WiFi.scanDelete();
+    normalZeroScanCount++;
+    Serial.printf("[SCAN] Failed/empty (%u)\n", normalZeroScanCount);
+    if (normalZeroScanCount >= 3) {
+      Serial.println("[SCAN] Resetting WiFi radio (stuck recovery)");
+      WiFi.mode(WIFI_OFF); delay(200);
+      WiFi.mode(WIFI_STA); delay(200);
+      normalZeroScanCount = 0;
+    }
+    return false;
+  }
+
+  normalZeroScanCount = 0;
+  Serial.printf("[SCAN] Async complete: %d networks\n", n);
+  processScanResults(n);
+  completedWifiCycles++;
+  return false;
+}
+
+bool wifiScanServiceInFlight() {
+  bool busy = false;
+  if (customScanInProgress) busy = serviceCustomScanInFlight(customScanTotalChannels()) || busy;
+  if (normalScanInProgress) busy = serviceNormalScanInFlight() || busy;
+  return busy || customScanInProgress || normalScanInProgress;
+}
+
+void doScanOnce() {
   // ---- Timing ----
   // aggressive:  100 ms/channel dwell, 1500 ms minimum gap between scan starts
   // powersaving: 200 ms/channel dwell, 10000 ms gap
@@ -257,27 +310,27 @@ void doScanOnce() {
   }
 
   // ---- Check if the async scan launched last iteration has finished ----
-  if (scanInProgress) {
+  if (normalScanInProgress) {
     int n = WiFi.scanComplete();
     if (n == WIFI_SCAN_RUNNING) return;  // still running — come back next tick
 
-    scanInProgress = false;
-    lastScanStartMs = millis();
+    normalScanInProgress = false;
+    normalLastScanStartMs = millis();
 
     if (n == WIFI_SCAN_FAILED || n < 0) {
       WiFi.scanDelete();
-      zeroScanCount++;
-      Serial.printf("[SCAN] Failed/empty (%u)\n", zeroScanCount);
-      if (zeroScanCount >= 3) {
+      normalZeroScanCount++;
+      Serial.printf("[SCAN] Failed/empty (%u)\n", normalZeroScanCount);
+      if (normalZeroScanCount >= 3) {
         Serial.println("[SCAN] Resetting WiFi radio (stuck recovery)");
         WiFi.mode(WIFI_OFF); delay(200);
         WiFi.mode(WIFI_STA); delay(200);
-        zeroScanCount = 0;
+        normalZeroScanCount = 0;
       }
       return;
     }
 
-    zeroScanCount = 0;
+    normalZeroScanCount = 0;
     Serial.printf("[SCAN] Async complete: %d networks\n", n);
     processScanResults(n);
     completedWifiCycles++;
@@ -285,18 +338,18 @@ void doScanOnce() {
   }
 
   // ---- Wait for the minimum gap before starting the next scan ----
-  if (millis() - lastScanStartMs < gapMs) return;
+  if (millis() - normalLastScanStartMs < gapMs) return;
 
   // ---- Kick off a new async scan ----
   // async=true, show_hidden=true, passive=false, max_ms_per_chan=dwellMs
   int16_t rc = WiFi.scanNetworks(/*async*/true, /*show_hidden*/true,
                                  /*passive*/false, dwellMs);
   if (rc == WIFI_SCAN_RUNNING || rc == 0) {
-    scanInProgress = true;
+    normalScanInProgress = true;
     Serial.printf("[SCAN] Async scan started (dwell=%lu ms)\n", (unsigned long)dwellMs);
   } else {
     // Shouldn’t normally happen; fall back and retry after gap
     Serial.printf("[SCAN] scanNetworks start failed (%d)\n", rc);
-    lastScanStartMs = millis();
+    normalLastScanStartMs = millis();
   }
 }

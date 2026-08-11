@@ -34,6 +34,7 @@
 #include "WiFiManager.h"
 #include "Scanner.h"
 #include "BleScanner.h"
+#include "StartupGpsBackfill.h"
 #include "WigleUpload.h"
 #include "WebUI.h"
 #include "MeshNode.h"
@@ -204,8 +205,10 @@ static void pollButton() {
 }
 
 static void drainBlePendingToLog() {
-  if (!cfg.bleEnabled) return;
-  if (!sdOk || !logFile || !bleScannerHasPending()) {
+  bool startupQueue = startupGpsBackfillAcceptingPending();
+  if (!cfg.bleEnabled && !startupQueue) return;
+  if (startupGpsBackfillReplayActive()) return;
+  if (!bleScannerHasPending() || (!startupQueue && (!sdOk || !logFile))) {
     bleScannerDiagAfterDrain();
     return;
   }
@@ -218,13 +221,17 @@ static void drainBlePendingToLog() {
   BleObservation obs;
   while (bleScannerConsume(obs)) {
     drained++;
-    if (appendBleRow(obs, firstSeen,
-                     gpsSnap.lat, gpsSnap.lon, gpsSnap.altM, gpsSnap.accM)) {
-      wrote++;
+    if (startupQueue) {
+      if (startupGpsBackfillQueueBle(obs, firstSeen)) wrote++;
+    } else {
+      if (appendBleRow(obs, firstSeen,
+                       gpsSnap.lat, gpsSnap.lon, gpsSnap.altM, gpsSnap.accM)) {
+        wrote++;
+      }
     }
   }
 
-  if (wrote > 0 && logFile) {
+  if (!startupQueue && wrote > 0 && logFile) {
     logFile.flush();
     Serial.printf("[KG-BLE] Wrote %u row(s)%s%s\n",
                   wrote,
@@ -321,6 +328,30 @@ static void serviceBleLifecycle(bool allowScan) {
     bleScannerStop();
   }
   drainBlePendingToLog();
+}
+
+static void serviceStartupGpsCloseout() {
+  if (!startupGpsBackfillCloseoutActive()) return;
+
+  uint32_t cyclesBefore = wifiScanCompletedCycles();
+  bool wifiBusy = wifiScanServiceInFlight();
+  uint32_t cyclesAfter = wifiScanCompletedCycles();
+  if (cyclesAfter != cyclesBefore) {
+    markBleDueAfterWifiCycle(cyclesAfter);
+  }
+
+  bleScannerTick();
+  drainBlePendingToLog();
+
+  BleDiagSnapshot bleSnap = bleScannerDiagSnapshot();
+  bool bleBusy = bleSnap.active;
+  uint16_t blePending = bleSnap.pendingDepth;
+
+  if (!wifiBusy && !bleBusy && blePending == 0) {
+    startupGpsBackfillCompleteCloseout();
+  } else {
+    startupGpsBackfillNoteCloseoutWaiting(wifiBusy, bleBusy, blePending);
+  }
 }
 
 // ================================================================
@@ -456,6 +487,7 @@ void setup() {
   }
 
   bleScannerDiagPrintConfig();
+  startupGpsBackfillBeginSession();
 
   // =========================
   // Phase 3: Init Button + OLED + GPS using FINAL pins
@@ -741,6 +773,7 @@ void loop() {
       lastAcc        = hdop;
       lastGpsValid   = true;
       lastGpsValidMs = millis();
+      startupGpsBackfillCaptureFirstFix(lastLat, lastLon, lastAlt, lastAcc);
     }
   }
 
@@ -821,6 +854,9 @@ void loop() {
   // which stops the WiFi driver and deinits ESP-Now.
   if (!meshNodeActive && !meshCoreActive) handleStaTransitions();
 
+  serviceStartupGpsCloseout();
+  startupGpsBackfillTick();
+
   // Scanning – page-aware logic
   // Mesh node page handles its own scan via nodeModeTick(); skip normal path.
   if (currentPage == 5) {
@@ -846,16 +882,21 @@ void loop() {
     allowScanForOled = allowScan;
 
     serviceBleLifecycle(allowScan);
-    serviceBlePendingBurst(allowScan, wifiScanCompletedCycles());
 
-    if (allowScan) {
+    if (!startupGpsBackfillScannerBlocked()) {
+      serviceBlePendingBurst(allowScan, wifiScanCompletedCycles());
+    }
+
+    if (allowScan && !startupGpsBackfillScannerBlocked()) {
       if (!bleScannerIsScanning() && !bleBurstPending) {
         uint32_t cyclesBefore = wifiScanCompletedCycles();
         doScanOnce();
         uint32_t cyclesAfter = wifiScanCompletedCycles();
         if (cyclesAfter != cyclesBefore) {
           markBleDueAfterWifiCycle(cyclesAfter);
-          serviceBlePendingBurst(allowScan, cyclesAfter);
+          if (!startupGpsBackfillScannerBlocked()) {
+            serviceBlePendingBurst(allowScan, cyclesAfter);
+          }
         }
       }
     }
