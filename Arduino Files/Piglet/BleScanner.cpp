@@ -9,15 +9,22 @@
 #include <BLEScan.h>
 #include <BLEUtils.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 namespace {
 
-struct BleKey {
-  char addr[18];
-  uint8_t addrType;
+static const uint32_t BLE_DEDUPE_INITIAL_CAPACITY = 256;
+static const uint8_t BLE_DEDUPE_MAX_LOAD_NUMERATOR = 3;
+static const uint8_t BLE_DEDUPE_MAX_LOAD_DENOMINATOR = 4;
+
+enum BleDedupeResult {
+  DEDUPE_INVALID,
+  DEDUPE_DUPLICATE,
+  DEDUPE_UNIQUE_TRACKED,
+  DEDUPE_ACCEPTED_DEGRADED
 };
 
 struct BleDiagState {
@@ -33,6 +40,7 @@ struct BleDiagState {
   uint32_t csvRowsWritten = 0;
   uint32_t startupBackfillRowsRouted = 0;
   uint32_t stopCount = 0;
+  uint32_t dedupeDegradedAccepted = 0;
   uint32_t burstStartMs = 0;
   uint32_t burstStopMs = 0;
   uint32_t burstElapsedMs = 0;
@@ -61,8 +69,11 @@ BleObservation pending[BLE_PENDING_CAPACITY];
 uint16_t pendingHead = 0;
 uint16_t pendingCount = 0;
 
-BleKey dedupe[BLE_DEDUPE_CAPACITY];
-uint16_t dedupeCount = 0;
+uint64_t* dedupeKeys = nullptr;
+uint32_t dedupeCapacity = 0;
+uint32_t dedupeCount = 0;
+uint32_t dedupeGrowCount = 0;
+bool dedupeDegraded = false;
 
 BleDiagState bleDiag;
 
@@ -131,35 +142,178 @@ static void appendServiceUuid(char* dest, size_t destLen, const char uuid[5]) {
   strncat(dest, uuid, destLen - used - 1);
 }
 
-static bool dedupeContains(const char* addr, uint8_t addrType) {
-  for (uint16_t i = 0; i < dedupeCount; i++) {
-    if (dedupe[i].addrType == addrType && strcmp(dedupe[i].addr, addr) == 0) {
-      return true;
-    }
+static bool hexNibble(char c, uint8_t& out) {
+  if (c >= '0' && c <= '9') {
+    out = (uint8_t)(c - '0');
+    return true;
+  }
+  if (c >= 'A' && c <= 'F') {
+    out = (uint8_t)(c - 'A' + 10);
+    return true;
+  }
+  if (c >= 'a' && c <= 'f') {
+    out = (uint8_t)(c - 'a' + 10);
+    return true;
   }
   return false;
 }
 
-static bool dedupeAdd(const char* addr, uint8_t addrType) {
-  if (dedupeContains(addr, addrType)) {
-    bleDiag.duplicateRejected++;
-    bleDiag.burstDuplicateRejected++;
-    return false;
+static bool parseDedupeKey(const char* addr, uint8_t addrType, uint64_t& key) {
+  if (!addr || strlen(addr) != 17) return false;
+
+  uint64_t mac = 0;
+  for (uint8_t i = 0; i < 6; i++) {
+    uint8_t hi = 0;
+    uint8_t lo = 0;
+    uint8_t pos = (uint8_t)(i * 3);
+    if (!hexNibble(addr[pos], hi) || !hexNibble(addr[pos + 1], lo)) return false;
+    if (i < 5 && addr[pos + 2] != ':') return false;
+    mac = (mac << 8) | (uint64_t)((hi << 4) | lo);
   }
-  if (dedupeCount >= BLE_DEDUPE_CAPACITY) {
-    bleDropped++;
-    bleDiag.pendingDropped++;
-    bleDiag.burstPendingDropped++;
+
+  key = ((uint64_t)addrType << 49) | (mac << 1) | 1ULL;
+  return true;
+}
+
+static uint32_t hashDedupeKey(uint64_t key) {
+  key ^= key >> 33;
+  key *= 0xff51afd7ed558ccdULL;
+  key ^= key >> 33;
+  key *= 0xc4ceb9fe1a85ec53ULL;
+  key ^= key >> 33;
+  return (uint32_t)(key ^ (key >> 32));
+}
+
+static bool dedupeContainsKey(uint64_t key) {
+  if (!dedupeKeys || dedupeCapacity == 0) return false;
+
+  uint32_t idx = hashDedupeKey(key) & (dedupeCapacity - 1);
+  while (true) {
+    uint64_t slot = dedupeKeys[idx];
+    if (slot == 0) return false;
+    if (slot == key) return true;
+    idx = (idx + 1) & (dedupeCapacity - 1);
+  }
+}
+
+static bool dedupeInsertKey(uint64_t* table, uint32_t capacity, uint64_t key) {
+  if (!table || capacity == 0) return false;
+
+  uint32_t idx = hashDedupeKey(key) & (capacity - 1);
+  while (true) {
+    if (table[idx] == 0) {
+      table[idx] = key;
+      return true;
+    }
+    if (table[idx] == key) return false;
+    idx = (idx + 1) & (capacity - 1);
+  }
+}
+
+static void dedupeEnterDegraded(const char* phase, uint32_t requestedCapacity) {
+  if (dedupeDegraded) return;
+
+  dedupeDegraded = true;
+  Serial.printf("[KG-BLE] WARNING dedupe allocation/growth FAILED phase=%s unique=%lu capacity=%lu requested=%lu freeHeap=%lu; entering degraded logging mode\n",
+                (phase && phase[0] != '\0') ? phase : "unknown",
+                (unsigned long)bleDiag.uniqueAccepted,
+                (unsigned long)dedupeCapacity,
+                (unsigned long)requestedCapacity,
+                (unsigned long)ESP.getFreeHeap());
+}
+
+static bool dedupeAllocateInitial() {
+  uint64_t* table = (uint64_t*)calloc(BLE_DEDUPE_INITIAL_CAPACITY, sizeof(uint64_t));
+  if (!table) {
+    dedupeEnterDegraded("init", BLE_DEDUPE_INITIAL_CAPACITY);
     return false;
   }
 
-  copyCStringField(dedupe[dedupeCount].addr, sizeof(dedupe[dedupeCount].addr), addr);
-  dedupe[dedupeCount].addrType = addrType;
+  dedupeKeys = table;
+  dedupeCapacity = BLE_DEDUPE_INITIAL_CAPACITY;
+  Serial.printf("[KG-BLE] dedupe init capacity=%lu bytes=%lu\n",
+                (unsigned long)dedupeCapacity,
+                (unsigned long)(dedupeCapacity * sizeof(uint64_t)));
+  return true;
+}
+
+static bool dedupeGrow(uint32_t newCapacity) {
+  uint32_t oldCapacity = dedupeCapacity;
+  uint64_t* oldKeys = dedupeKeys;
+  uint64_t* next = (uint64_t*)calloc(newCapacity, sizeof(uint64_t));
+  if (!next) {
+    dedupeEnterDegraded("grow", newCapacity);
+    return false;
+  }
+
+  for (uint32_t i = 0; i < oldCapacity; i++) {
+    uint64_t key = oldKeys[i];
+    if (key != 0 && !dedupeInsertKey(next, newCapacity, key)) {
+      free(next);
+      dedupeEnterDegraded("rehash", newCapacity);
+      return false;
+    }
+  }
+
+  dedupeKeys = next;
+  dedupeCapacity = newCapacity;
+  dedupeGrowCount++;
+  free(oldKeys);
+
+  Serial.printf("[KG-BLE] dedupe grow old=%lu new=%lu unique=%lu\n",
+                (unsigned long)oldCapacity,
+                (unsigned long)newCapacity,
+                (unsigned long)bleDiag.uniqueAccepted);
+  return true;
+}
+
+static bool dedupeEnsureCapacityForInsert() {
+  if (dedupeDegraded) return false;
+  if (dedupeCapacity == 0) return dedupeAllocateInitial();
+
+  uint64_t projected = ((uint64_t)dedupeCount + 1ULL) * BLE_DEDUPE_MAX_LOAD_DENOMINATOR;
+  uint64_t threshold = (uint64_t)dedupeCapacity * BLE_DEDUPE_MAX_LOAD_NUMERATOR;
+  if (projected <= threshold) return true;
+
+  uint32_t newCapacity = dedupeCapacity;
+  do {
+    if (newCapacity >= 0x80000000UL) {
+      dedupeEnterDegraded("grow_overflow", newCapacity);
+      return false;
+    }
+    newCapacity *= 2;
+    threshold = (uint64_t)newCapacity * BLE_DEDUPE_MAX_LOAD_NUMERATOR;
+  } while (projected > threshold);
+
+  return dedupeGrow(newCapacity);
+}
+
+static BleDedupeResult dedupeAdd(const char* addr, uint8_t addrType) {
+  uint64_t key = 0;
+  if (!parseDedupeKey(addr, addrType, key)) return DEDUPE_INVALID;
+
+  if (dedupeContainsKey(key)) {
+    bleDiag.duplicateRejected++;
+    bleDiag.burstDuplicateRejected++;
+    return DEDUPE_DUPLICATE;
+  }
+
+  if (!dedupeEnsureCapacityForInsert()) {
+    bleDiag.dedupeDegradedAccepted++;
+    return DEDUPE_ACCEPTED_DEGRADED;
+  }
+
+  if (!dedupeInsertKey(dedupeKeys, dedupeCapacity, key)) {
+    dedupeEnterDegraded("insert", dedupeCapacity);
+    bleDiag.dedupeDegradedAccepted++;
+    return DEDUPE_ACCEPTED_DEGRADED;
+  }
+
   dedupeCount++;
   bleUniqueCount++;
   bleDiag.uniqueAccepted++;
   bleDiag.burstUniqueAccepted++;
-  return true;
+  return DEDUPE_UNIQUE_TRACKED;
 }
 
 static bool pushPending(const BleObservation& obs) {
@@ -225,6 +379,9 @@ static void fillSnapshotNoLock(BleDiagSnapshot& out) {
   out.startupBackfillRowsRouted = bleDiag.startupBackfillRowsRouted;
   out.stopCount = bleDiag.stopCount;
   out.droppedTotal = bleDropped;
+  out.dedupeCapacity = dedupeCapacity;
+  out.dedupeGrowCount = dedupeGrowCount;
+  out.dedupeDegradedAccepted = bleDiag.dedupeDegradedAccepted;
   out.burstStartMs = bleDiag.burstStartMs;
   out.burstStopMs = bleDiag.burstStopMs;
   out.burstElapsedMs = bleDiag.burstElapsedMs;
@@ -236,6 +393,7 @@ static void fillSnapshotNoLock(BleDiagSnapshot& out) {
   out.burstCsvRowsWritten = bleDiag.burstCsvRowsWritten;
   out.burstStartupBackfillRowsRouted = bleDiag.burstStartupBackfillRowsRouted;
   out.pendingDepth = pendingCount;
+  out.dedupeDegraded = dedupeDegraded;
   out.ready = bleReady;
   out.active = bleRunning;
 }
@@ -296,11 +454,13 @@ public:
         copyCStringField(firstAddr, sizeof(firstAddr), obs.addr);
       }
 
-      if (strlen(obs.addr) != 17) {
+      BleDedupeResult dedupeResult = dedupeAdd(obs.addr, obs.addrType);
+      if (dedupeResult == DEDUPE_INVALID) {
         bleDropped++;
         bleDiag.pendingDropped++;
         bleDiag.burstPendingDropped++;
-      } else if (dedupeAdd(obs.addr, obs.addrType)) {
+      } else if (dedupeResult == DEDUPE_UNIQUE_TRACKED ||
+                 dedupeResult == DEDUPE_ACCEPTED_DEGRADED) {
         pushPending(obs);
       }
     }
@@ -359,6 +519,11 @@ void bleScannerBegin() {
   bleScan->setInterval(100);
   bleScan->setWindow(100);
   bleScan->setDuplicateFilter(true);
+
+  {
+    BleLock lock;
+    if (lock.ok()) dedupeEnsureCapacityForInsert();
+  }
 
   bleReady = true;
   Serial.println("[KG-BLE] init OK");
@@ -505,6 +670,12 @@ void bleScannerDiagPrintConfig() {
                 cfg.bleEnabled ? 1 : 0,
                 cfg.bleScanDurationMs,
                 cfg.bleEveryNCycles);
+  Serial.printf("[KG-BLE] dedupe exactUnique=%lu capacity=%lu grows=%lu degraded=%u degradedAccepted=%lu\n",
+                (unsigned long)bleDiag.uniqueAccepted,
+                (unsigned long)dedupeCapacity,
+                (unsigned long)dedupeGrowCount,
+                dedupeDegraded ? 1 : 0,
+                (unsigned long)bleDiag.dedupeDegradedAccepted);
 }
 
 void bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows) {
@@ -572,14 +743,18 @@ void bleScannerDiagAfterDrain() {
                   (unsigned long)snap.burstPendingDropped);
   }
 
-  Serial.printf("[KG-BLE] summary elapsed=%lu callbacks=%lu newUnique=%lu csv=%lu startupBackfill=%lu dropped=%lu totalUnique=%lu\n",
+  Serial.printf("[KG-BLE] summary elapsed=%lu callbacks=%lu newUnique=%lu csv=%lu startupBackfill=%lu dropped=%lu totalUnique=%lu dedupeCap=%lu grows=%lu degraded=%u degradedAccepted=%lu\n",
                 (unsigned long)snap.burstElapsedMs,
                 (unsigned long)snap.burstCallbacks,
                 (unsigned long)snap.burstUniqueAccepted,
                 (unsigned long)snap.burstCsvRowsWritten,
                 (unsigned long)snap.burstStartupBackfillRowsRouted,
                 (unsigned long)snap.burstPendingDropped,
-                (unsigned long)snap.uniqueAccepted);
+                (unsigned long)snap.uniqueAccepted,
+                (unsigned long)snap.dedupeCapacity,
+                (unsigned long)snap.dedupeGrowCount,
+                snap.dedupeDegraded ? 1 : 0,
+                (unsigned long)snap.dedupeDegradedAccepted);
 
   if (shouldClear && bleScan && !bleRunning && !bleScan->isScanning()) {
     bleScan->clearResults();
@@ -605,6 +780,7 @@ void bleScannerDiagPrintConfig() {
                 cfg.bleScanDurationMs,
                 cfg.bleEveryNCycles);
   Serial.println("[KG-BLE] init FAILED BLE library unavailable");
+  Serial.println("[KG-BLE] dedupe unavailable (BLE library unavailable)");
 }
 void bleScannerDiagNoteDrain(uint16_t, uint16_t) {}
 void bleScannerDiagNoteStartupBackfill(uint16_t, uint16_t) {}

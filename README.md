@@ -1,46 +1,59 @@
 
 # Piglet KG Edition
 
-**Piglet KG Edition** is an ESP32-C5-focused, field-tested fork of Piglet by
-KiloGramowy.
+**Piglet KG Edition** is an ESP32-C5-focused, field-tested fork of Piglet v2.58
+by KiloGramowy.
 
 This repository is a direct fork of the original
 [Hamspiced/piglet](https://github.com/Hamspiced/piglet) project. KG Edition is
 focused on incremental, field-tested improvements for mobile wardriving, GPS
-resilience, Wi-Fi scanning performance, and future Wi-Fi/BLE tuning. The primary
-hardware target for KG-specific tuning is the
+resilience, Wi-Fi scanning performance, BLE scanning, OLED status, and WebUI
+control. The primary hardware target for KG-specific tuning is the
 [Seeed Studio XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html).
 
 KG Edition is not intended to replace upstream Piglet. The goal is to keep the
 original Piglet identity and compatibility where practical while developing
 small, reviewable improvements that can be tested on real hardware.
 
+Current KG development is unified on `main`.
+
 Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet)
 
 ## KG Edition Status
 
-✅ Hardware validated on Seeed Studio XIAO ESP32-C5:
+✅ Hardware validated on **Seeed Studio XIAO ESP32-C5**.
+
+Currently implemented:
 
 - ✅ Configurable GPS cache duration
 - ✅ WebUI GPS cache control
-- ✅ 720-minute / 12-hour KG GPS field profile
+- ✅ `720`-minute / 12-hour KG GPS field profile
 - ✅ Startup GPS Backfill for pre-first-fix Wi-Fi/BLE detections
+- ✅ Explicit scan profiles: `original`, `kg`, and `custom`
+- ✅ KG Recommended ESP32-C5 scan profile
 - ✅ Configurable 2.4 GHz / 5 GHz channel profiles
 - ✅ Per-channel asynchronous scheduler for custom channel profiles
 - ✅ Separate configurable dwell for 2.4 GHz / 5 GHz custom scanning
 - ✅ WebUI Scanning (Solo) controls
-- ✅ Tested KG scanning profile:
-  - 2.4 GHz: `1,6,11` at `110 ms`
-  - 5 GHz: `36,40,44,48` at `100 ms`
-- ✅ Save/reboot persistence for the tested KG profile
-- ✅ Runtime CSV verified to contain only the selected channels for that tested
-  profile
+- ✅ Passive BLE scanning interleaved with Wi-Fi
+- ✅ Dynamic BLE dedupe with no fixed device-count limit
+- ✅ OLED `B:<unique>` BLE count when BLE is enabled
+- ✅ WebUI BLE status pill and `BLE Found` counter
+- ✅ WebUI PSK masking for Home and Wardriver passwords
+- ✅ Stop/Start pause/resume semantics for the active session
+
+KG Recommended is the current default profile for this fork:
+
+- 2.4 GHz: `1,6,11` at `110 ms`
+- 5 GHz: `36,40,44,48` at `100 ms`
+- BLE: passive `1000 ms` scan after every `5` completed Wi-Fi cycles
 
 This validates the tested configuration above. It does not claim that every
-possible custom channel and dwell combination has been hardware tested.
+possible custom channel, dwell, BLE timing, route speed, or RF environment has
+been hardware tested.
 
-🐷 Original Piglet all-channel scanning remains available as the default/fallback
-mode.
+🐷 Original Piglet all-channel Wi-Fi scanning remains selectable as a
+compatibility profile.
 
 Profile meanings in WebUI:
 
@@ -53,13 +66,29 @@ Profile meanings in WebUI:
   Custom from a preset opens a clean manual setup; saved Custom settings are
   restored after reboot.
 
-✅ Included in the `kg-c5-ble-lab` KG Recommended profile:
+Roadmap / still field-tunable:
 
-- ✅ BLE timing: `1000 ms` / every `5` Wi-Fi cycles
+- 🧪 Further ESP32-C5 scan-profile validation
+- 🧪 Further BLE / Wi-Fi coexistence tuning
+- 🧪 BLE scan timing refinement across busier environments
+- 📌 Auto Log Retention / Auto Delete based on age or free space
 
-## Current KG Configuration
+## KG Quick Start
 
-For the current KG GPS field-testing profile:
+Use the hardware-tested XIAO ESP32-C5 KG Recommended scan profile:
+
+```ini
+scanProfile=kg
+wifi24Channels=1,6,11
+wifi5Channels=36,40,44,48
+wifi24DwellMs=110
+wifi5DwellMs=100
+bleEnabled=true
+bleScanDurationMs=1000
+bleEveryNCycles=5
+```
+
+For the current KG GPS field-testing configuration:
 
 ```ini
 gpsCacheMinutes=720
@@ -69,37 +98,36 @@ This keeps the last valid GPS coordinates available for up to 720 minutes
 (12 hours) after the current GPS fix is lost. This is a KG Edition
 recommendation, not an upstream Piglet default.
 
-For the hardware-tested XIAO ESP32-C5 scanning profile:
+Important GPS notes:
 
-```ini
-scanProfile=kg
-wifi24Channels=1,6,11
-wifi5Channels=36,40,44,48
-wifi24DwellMs=110
-wifi5DwellMs=100
-```
-
-Leave `wifi24Channels` and `wifi5Channels` empty to use Original Piglet
-all-channel scanning. Empty or `0` dwell values use the existing `scanMode`
-dwell timing when custom channel scanning is active.
-
-For the current BLE hardware-tested starting profile:
-
-```ini
-bleEnabled=true
-bleScanDurationMs=1000
-bleEveryNCycles=5
-```
+- Default GPS cache: `3` minutes
+- Supported range: `1..10080` minutes
+- `gpsCacheMinutes=720` is separate from `scanProfile=kg`; selecting KG
+  Recommended does not automatically change the GPS cache
+- Long cache windows improve continuity during temporary GPS loss, but can
+  attach stale coordinates if the device moves too far before regaining a fix
 
 These BLE values work on the project XIAO ESP32-C5 and are the fixed BLE timing
 used by the WebUI `KG Recommended` scanning profile when BLE is enabled. BLE can
-still be disabled by the user. This is a hardware-tested KG Recommended
-starting profile, not a claim of universal optimum.
+still be disabled by the user while KG Recommended remains selected. This is a
+hardware-tested starting profile, not a claim of universal optimum.
 
-✅ OLED note: when `bleEnabled=true`, the existing OLED Speed row shows
-`B: <unique BLE count>`. When `bleEnabled=false`, the original Speed display
-returns. This follows BLE Enabled/Disabled, not the profile name, and does not
-redesign the OLED layout.
+## Scan Profiles
+
+Piglet KG Edition uses explicit scan-profile identity:
+
+- `scanProfile=kg` - KG Recommended XIAO ESP32-C5 field-tested starting profile
+  and current default for this fork
+- `scanProfile=original` - Original Piglet compatibility mode with upstream-style
+  all-channel Wi-Fi scanning
+- `scanProfile=custom` - manual channel, dwell, and BLE timing values from
+  `config.txt`
+
+Profile identity comes from `scanProfile`. Select the intended profile
+explicitly with that key.
+
+KG Recommended is a hardware-tested starting point, not a universal best setting
+for every region, antenna, enclosure, route speed, or RF environment.
 
 ## KG Edition Changes
 
@@ -119,8 +147,8 @@ are replayed with that same first-fix GPS snapshot.
 
 Each replayed detection keeps its original `FirstSeen` timestamp and original
 radio metadata. After replay completes, normal live GPS logging resumes. If GPS
-is later lost, the existing configurable GPS cache takes over; the current KG
-field-tested profile uses:
+is later lost, the existing configurable GPS cache takes over. The current KG
+field-testing configuration can use:
 
 ```ini
 gpsCacheMinutes=720
@@ -169,7 +197,7 @@ gpsCacheMinutes=3
 - Valid range: `1..10080` minutes
 - If the current GPS fix is lost, Piglet may continue using the last valid GPS
   coordinates for the configured duration.
-- When the configured cache expires, normal fallback behavior resumes.
+- When the configured cache expires, normal no-fix GPS behavior resumes.
 - Configurations without `gpsCacheMinutes` retain the original 3-minute
   behavior.
 
@@ -178,20 +206,35 @@ device continues moving while GPS remains unavailable.
 
 ### Configurable scanning profiles and dwell
 
-KG Edition adds custom 2.4 GHz / 5 GHz channel profiles for solo scanning, a
-per-channel asynchronous scheduler for those custom profiles, and separate dwell
-settings for 2.4 GHz and 5 GHz.
+KG Edition adds explicit solo scanning profiles, custom 2.4 GHz / 5 GHz channel
+lists, a per-channel asynchronous scheduler for custom profiles, and separate
+dwell settings for 2.4 GHz and 5 GHz.
 
 Configuration keys:
 
 ```ini
+scanProfile=kg
 wifi24Channels=
 wifi5Channels=
 wifi24DwellMs=
 wifi5DwellMs=
+bleEnabled=true
+bleScanDurationMs=1000
+bleEveryNCycles=5
 ```
 
-- Empty channel lists select Original Piglet all-channel scanning.
+Available profile modes:
+
+- `scanProfile=original` - upstream-style all-channel Wi-Fi scanning with KG BLE
+  disabled
+- `scanProfile=kg` - KG Recommended XIAO ESP32-C5 field-tested profile and
+  current default for this fork
+- `scanProfile=custom` - explicitly user-selected manual Wi-Fi and BLE tuning
+
+Profile identity is explicit. Custom is not selected automatically just because
+values match or differ, and Original Piglet mode requires
+`scanProfile=original`.
+
 - `wifi24Channels` accepts 2.4 GHz channels `1..14`.
 - `wifi5Channels` accepts supported 5 GHz channels on ESP32-C5.
 - `wifi24DwellMs` and `wifi5DwellMs` apply only to the custom per-channel
@@ -202,40 +245,153 @@ wifi5DwellMs=
 - The KG Recommended WebUI profile writes `1,6,11` / `36,40,44,48` with
   `110 ms` / `100 ms` dwell, plus BLE timing `1000 ms` / every `5` Wi-Fi
   cycles when BLE is enabled.
+- BLE can be disabled by the user while KG Recommended remains selected.
+
+### Passive BLE scanning and dynamic dedupe
+
+KG Edition adds passive BLE scanning interleaved with Wi-Fi scanning. Wi-Fi
+remains the primary scanner.
+
+With KG Recommended timing enabled, Piglet runs a passive `1000 ms` BLE scan
+after every `5` completed Wi-Fi scan cycles.
+
+BLE devices are written to the same Wigle CSV with:
+
+- `Type=BLE`
+- `Channel=0`
+- `Frequency=0`
+
+`Channel=0` and `Frequency=0` are intentional for BLE rows; they are not Wi-Fi
+channel/frequency values.
+
+BLE unique-device tracking uses a dynamic in-memory dedupe table:
+
+- Compact `uint64_t` identity keys
+- Dynamic open-addressing hash table
+- Starts small and grows as needed
+- No fixed device-count limit
+- Practical capacity depends on available ESP32-C5 heap
+
+The old fixed BLE dedupe ceiling has been removed. Hardware validation on a real
+XIAO ESP32-C5 recorded `211` unique BLE devices in one field session, confirming
+behavior beyond the former ceiling without claiming a maximum.
+
+If the ESP32 cannot allocate memory to grow BLE tracking, Piglet enters a
+degraded BLE tracking state. BLE logging continues, the exact unique count
+freezes at the last safely tracked value, and diagnostics expose the degraded
+state.
+
+### OLED and WebUI BLE status
+
+When BLE is enabled, the existing OLED Speed row is replaced with the live BLE
+unique count:
+
+```text
+B:<unique>
+```
+
+Example:
+
+```text
+B:45
+```
+
+`B` means exact unique BLE devices in the current boot/wardrive session during
+normal non-degraded operation.
+
+When BLE is disabled, the OLED returns to the original Speed display.
+
+The WebUI status area shows the same session BLE count in the BLE status pill:
+
+- `BLE: OFF`
+- `BLE: READY · B:<count>`
+- `BLE: SCANNING · B:<count>`
+- `BLE: DEGRADED · B:<count>`
+
+The main WebUI counter row shows:
+
+```text
+2.4 GHz Found | 5 GHz Found | BLE Found
+```
+
+`BLE Found` uses the same exact unique count as OLED `B`, the BLE status pill,
+and `/status.json` `bleUniqueCount`. If BLE is temporarily disabled, the
+accumulated session count remains visible.
+
+The BLE pill and `BLE Found` counter update through the existing WebUI status
+polling (`~1500 ms`); no separate BLE-specific polling timer is used.
+
+The final WebUI status behavior has been physically validated on XIAO ESP32-C5,
+including matching BLE counts between OLED `B`, the BLE pill, and `BLE Found`.
+
+### Stop / Start session behavior
+
+In Piglet KG Edition:
+
+- `Stop Scan` means pause scanning.
+- `Start Scan` means resume the same active wardrive session.
+- Stop/Start preserves the same CSV/log file, Wi-Fi counters, BLE unique
+  counter, and BLE dedupe state.
+- Stop does not normally close the log.
+- Start does not create a fresh session.
+- Deep sleep closes the log before sleep.
+- Reboot naturally starts a new runtime session.
+
+### WebUI configuration and PSK masking
+
+The primary WebUI configuration fields are ordered as:
+
+```text
+GPS Cache | Scan Mode
+Home SSID | Wardriver SSID
+Home PSK  | Wardriver PSK
+```
+
+Home and Wardriver PSK fields are visually shown as saved/masked when
+configured. Actual passwords are not returned by `/status.json`; the endpoint
+exposes only `"(set)"` or an empty value for those fields.
+
+Leaving a masked PSK untouched preserves the saved password. Entering a
+replacement password updates it normally.
+
+This is WebUI/API masking behavior, not SD-card config encryption.
+
+### Current build status
+
+Latest manual Arduino IDE verify after the BLE Found WebUI update:
+
+```text
+Sketch uses 1,898,927 bytes (56%) of program storage space.
+Maximum is 3,342,336 bytes.
+Global variables use 110,988 bytes (33%) of dynamic memory.
+216,692 bytes remain for local variables.
+Maximum is 327,680 bytes.
+```
 
 ## KG Edition Roadmap
 
-The following items are planned or experimental. Some may exist only on the
-lab branch and are not yet validated as KG Recommended behavior:
+The following items are planned or experimental:
 
-- 🧪 Further ESP32-C5 mobile wardriving scan-profile tuning. The next planned
-  5 GHz dwell field-test values are `60 ms` and `40 ms`; they are not yet
-  validated.
-- 📌 Automatic Log Retention / Auto Delete:
-  - Off / On
-  - Delete eligibility based on successful upload to WDGWars, WiGLE, or both
-  - Configurable "Keep last N uploaded logs"
-  - Delete oldest eligible uploaded logs only after the retained count is
-    exceeded
-  - Never delete a log when the required upload confirmation is missing or
-    unsuccessful
-  - If "Both" is selected, require confirmed successful upload to both services
-    before deletion
-- 🚧 Further BLE comparative field profiles and Wi-Fi/BLE coexistence tuning
-  remain experimental on `kg-c5-ble-lab`.
+- 🧪 Further ESP32-C5 mobile wardriving scan-profile tuning
+- 🧪 Further BLE comparative field profiles and Wi-Fi/BLE coexistence tuning
 - 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
+- 📌 Automatic Log Retention / Auto Delete based on upload success, age, and
+  free space
 
-🚧 Further BLE tuning remains lab work. Startup GPS Backfill is hardware
+🚧 Further BLE tuning remains experimental. Startup GPS Backfill is hardware
 validated, including BLE startup rows. KG Recommended BLE timing is
-hardware-tested at `1000 ms` / every `5` Wi-Fi cycles; other BLE profiles are
-not yet validated.
+hardware-tested at `1000 ms` / every `5` Wi-Fi cycles; other BLE profiles remain
+field-test candidates.
+
+The repository is usable and shareable from `main`.
 
 ## Upstream and Credits
 
 Original Piglet: [Hamspiced/piglet](https://github.com/Hamspiced/piglet)
 
-Piglet KG Edition is directly forked from the original Hamspiced project.
+Piglet KG Edition is directly forked from the original Hamspiced project and is
+based on Piglet v2.58.
 
 [drdray1/piglet](https://github.com/drdray1/piglet) is a valuable secondary
 reference and inspiration source for selected experimental ideas. Features are
@@ -603,6 +759,8 @@ scanMode=aggressive
 # ------------------------------------------------------------
 # Explicit profile identity: original, kg, or custom.
 # Missing/invalid legacy values default to kg.
+# Original Piglet compatibility mode requires scanProfile=original.
+# GPS cache is separate; scanProfile=kg does not set gpsCacheMinutes.
 # KG tested XIAO ESP32-C5 profile:
 #   scanProfile=kg
 #   wifi24Channels=1,6,11
