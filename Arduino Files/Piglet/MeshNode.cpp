@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "GPS.h"
 #include "SDUtils.h"
+#include "StartupGpsBackfill.h"
 #include <esp_now.h>
 #include "esp_wifi.h"
 
@@ -470,6 +471,13 @@ static void coreParseAndLogText(const char* line) {
   int    ch    = s.substring(p2 + 1, p3).toInt();
   int    rssi  = s.substring(p3 + 1).toInt();  // toInt() stops at next comma
 
+  String firstSeen = iso8601NowUTC();
+  if (startupGpsBackfillAcceptingPending()) {
+    startupGpsBackfillQueueWifi(bssid, ssid, auth, firstSeen, ch, rssi);
+    coreRecordsRx++;
+    return;
+  }
+
   double lat = 0, lon = 0, altM = 0, accM = 0;
   if (gpsHasFix) {
     lat  = gps.location.lat();
@@ -477,7 +485,7 @@ static void coreParseAndLogText(const char* line) {
     altM = gps.altitude.meters();
     accM = gps.hdop.hdop();
   }
-  appendWigleRow(bssid, ssid, auth, iso8601NowUTC(), ch, rssi, lat, lon, altM, accM);
+  appendWigleRow(bssid, ssid, auth, firstSeen, ch, rssi, lat, lon, altM, accM);
   coreRecordsRx++;
 }
 

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 void doScanOnce();
+bool wifiScanServiceInFlight();
 uint32_t wifiScanCompletedCycles();
 
 struct GpsLogSnapshot {
