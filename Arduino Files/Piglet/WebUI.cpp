@@ -426,11 +426,21 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           </div>
           <div>
             <label>BLE scanning</label>
-            <select id="bleEnabled">
+            <select id="bleEnabled" onchange="updateBleTimingControls()">
               <option value="false">Disabled - default</option>
               <option value="true">Enabled - experimental</option>
             </select>
             <div class="field-help">Passive BLE scanning runs between Wi-Fi cycles. Initial KG test profile: 1000 ms after every 5 completed Wi-Fi cycles. Wi-Fi remains the primary scanner.</div>
+          </div>
+          <div>
+            <label>BLE scan duration (ms)</label>
+            <input id="bleScanDurationMs" type="number" min="250" max="5000" step="250" value="1000">
+            <div class="field-help">Duration of each passive BLE scan burst. Longer listens for more BLE advertisements but leaves less time for Wi-Fi. 1000 ms is the hardware-tested starting value, not yet an optimal setting.</div>
+          </div>
+          <div>
+            <label>BLE every N Wi-Fi cycles</label>
+            <input id="bleEveryNCycles" type="number" min="1" max="100" step="1" value="5">
+            <div class="field-help">One Wi-Fi cycle is one full configured channel sweep. Lower runs BLE more often; higher leaves more Wi-Fi time. 5 is the hardware-tested starting value, not yet an optimal setting.</div>
           </div>
         </div>
       </div>
@@ -582,6 +592,31 @@ function setChannelError(msg){
   if(!el)return;
   el.textContent=msg||'';
   el.style.display=msg?'block':'none';
+}
+
+function updateBleTimingControls(){
+  const enabled=$('bleEnabled')?.value==='true';
+  for(const id of ['bleScanDurationMs','bleEveryNCycles']){
+    const el=$(id);
+    if(el)el.disabled=!enabled;
+  }
+}
+
+function parsePositiveIntStrict(v){
+  const s=String(v??'').trim();
+  if(!/^[0-9]+$/.test(s))return NaN;
+  return Number(s);
+}
+
+function validateBleTiming(){
+  const duration=parsePositiveIntStrict($('bleScanDurationMs')?.value);
+  if(!Number.isInteger(duration)||duration<250||duration>5000||((duration-250)%250)!==0){
+    throw new Error('BLE scan duration must be 250..5000 ms in 250 ms steps.');
+  }
+  const cycles=parsePositiveIntStrict($('bleEveryNCycles')?.value);
+  if(!Number.isInteger(cycles)||cycles<1||cycles>100){
+    throw new Error('BLE every N Wi-Fi cycles must be 1..100.');
+  }
 }
 
 function setProfileFromChannels(band,value){
@@ -762,7 +797,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','homeSsid','wardriverSsid','wardriverPsk','scanMode','bleEnabled','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','homeSsid','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -770,6 +805,7 @@ async function loadStatus(){
         if(el)el.value=v;
       }
     }
+    updateBleTimingControls();
     applyLoadedScanProfileConfig(
       j?.config?.wifi24Channels||'',
       j?.config?.wifi5Channels||'',
@@ -851,7 +887,8 @@ async function deleteAllLogs(){
 async function doSave(){
   if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original Piglet.');
   prepareDwellSave();
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  validateBleTiming();
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -1030,6 +1067,7 @@ async function pollUpload(){
   }catch(e){/* silent */}
 }
 setInterval(pollUpload,1500);
+updateBleTimingControls();
 loadStatus();loadFiles();
 </script>
 </body>

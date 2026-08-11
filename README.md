@@ -42,6 +42,10 @@ possible custom channel and dwell combination has been hardware tested.
 🐷 Original Piglet all-channel scanning remains available as the default/fallback
 mode.
 
+🧪 Available on `kg-c5-ble-lab` for BLE field tuning:
+
+- 🧪 WebUI BLE scan duration / every-N-cycle controls
+
 ## Current KG Configuration
 
 For the current KG GPS field-testing profile:
@@ -66,6 +70,18 @@ wifi5DwellMs=100
 Leave `wifi24Channels` and `wifi5Channels` empty to use Original Piglet
 all-channel scanning. Empty or `0` dwell values use the existing `scanMode`
 dwell timing when custom channel scanning is active.
+
+For the current BLE hardware-tested starting profile:
+
+```ini
+bleEnabled=true
+bleScanDurationMs=1000
+bleEveryNCycles=5
+```
+
+These BLE values work on the project XIAO ESP32-C5 and are exposed in WebUI for
+field tuning. They are not yet claimed to be optimal and are not a KG
+Recommended BLE preset.
 
 ## KG Edition Changes
 
@@ -170,7 +186,8 @@ wifi5DwellMs=
 
 ## KG Edition Roadmap
 
-The following items are planned or experimental. They are not implemented yet:
+The following items are planned or experimental. Some may exist only on the
+lab branch and are not yet validated as KG Recommended behavior:
 
 - 🧪 Further ESP32-C5 mobile wardriving scan-profile tuning. The next planned
   5 GHz dwell field-test values are `60 ms` and `40 ms`; they are not yet
@@ -185,14 +202,14 @@ The following items are planned or experimental. They are not implemented yet:
     unsuccessful
   - If "Both" is selected, require confirmed successful upload to both services
     before deletion
-- 🚧 BLE scanning/timing controls and Wi-Fi coexistence tuning remain
-  experimental on `kg-c5-ble-lab`.
+- 🚧 BLE scan timing, comparative field profiles, and Wi-Fi/BLE coexistence
+  tuning remain experimental on `kg-c5-ble-lab`.
 - 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
 
 🚧 BLE branch work is still experimental. Startup GPS Backfill is hardware
-validated, including BLE startup rows, but BLE WebUI timing controls are not
-implemented yet.
+validated, including BLE startup rows. BLE timing controls are available for
+field tuning, but no KG Recommended BLE preset has been validated yet.
 
 ## Upstream and Credits
 
