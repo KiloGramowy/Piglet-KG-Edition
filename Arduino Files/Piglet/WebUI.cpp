@@ -427,8 +427,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <div>
             <label>BLE scanning</label>
             <select id="bleEnabled" onchange="updateBleTimingControls()">
-              <option value="false">Disabled - default</option>
-              <option value="true">Enabled - experimental</option>
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
             </select>
             <div class="field-help">Passive BLE scanning runs between Wi-Fi cycles. Initial KG test profile: 1000 ms after every 5 completed Wi-Fi cycles. Wi-Fi remains the primary scanner.</div>
           </div>
@@ -596,6 +596,18 @@ function setChannelError(msg){
   el.style.display=msg?'block':'none';
 }
 
+function updateBleOptionLabels(){
+  const profile=$('channelScanMode')?.value||'original';
+  const disabledOpt=document.querySelector('#bleEnabled option[value="false"]');
+  const enabledOpt=document.querySelector('#bleEnabled option[value="true"]');
+  if(disabledOpt)disabledOpt.textContent='Disabled';
+  if(enabledOpt){
+    if(profile==='kg')enabledOpt.textContent='Enabled \u2014 KG Recommended';
+    else if(profile==='custom')enabledOpt.textContent='Enabled \u2014 Custom';
+    else enabledOpt.textContent='Enabled';
+  }
+}
+
 function updateBleTimingControls(){
   const enabled=$('bleEnabled')?.value==='true';
   const custom=($('channelScanMode')?.value||'original')==='custom';
@@ -603,6 +615,7 @@ function updateBleTimingControls(){
     const el=$(id);
     if(el)el.disabled=!(custom&&enabled);
   }
+  updateBleOptionLabels();
 }
 
 function setBleTimingValues(duration,cycles){
@@ -614,6 +627,20 @@ function parsePositiveIntStrict(v){
   const s=String(v??'').trim();
   if(!/^[0-9]+$/.test(s))return NaN;
   return Number(s);
+}
+
+function canonicalIntString(v){
+  const n=parsePositiveIntStrict(v);
+  return Number.isInteger(n)?String(n):'';
+}
+
+function isKgRecommendedProfileConfig(ch24,ch5,d24,d5,bleDuration,bleCycles){
+  return compactChannels(ch24)===WIFI24_RECOMMENDED
+    && compactChannels(ch5)===WIFI5_COMMON
+    && canonicalIntString(d24)===WIFI24_DWELL_RECOMMENDED
+    && canonicalIntString(d5)===WIFI5_DWELL_RECOMMENDED
+    && canonicalIntString(bleDuration)===BLE_DURATION_KG_RECOMMENDED
+    && canonicalIntString(bleCycles)===BLE_CYCLES_KG_RECOMMENDED;
 }
 
 function validateBleTiming(){
@@ -683,8 +710,7 @@ function applyLoadedScanProfileConfig(ch24,ch5,d24,d5,bleDuration,bleCycles){
   const v5=compactChannels(ch5);
   const d24v=String(d24??'').trim();
   const d5v=String(d5??'').trim();
-  const bleDurationV=String(bleDuration??'').trim();
-  const bleCyclesV=String(bleCycles??'').trim();
+  const kgConfig=isKgRecommendedProfileConfig(v24,v5,d24v,d5v,bleDuration,bleCycles);
   const mode=$('channelScanMode');
 
   if($('wifi24Channels'))$('wifi24Channels').value=v24;
@@ -696,7 +722,7 @@ function applyLoadedScanProfileConfig(ch24,ch5,d24,d5,bleDuration,bleCycles){
 
   if(mode){
     if(v24===''&&v5==='')mode.value='original';
-    else if(v24===WIFI24_RECOMMENDED&&v5===WIFI5_COMMON&&d24v===WIFI24_DWELL_RECOMMENDED&&d5v===WIFI5_DWELL_RECOMMENDED&&bleDurationV===BLE_DURATION_KG_RECOMMENDED&&bleCyclesV===BLE_CYCLES_KG_RECOMMENDED)mode.value='kg';
+    else if(kgConfig)mode.value='kg';
     else mode.value='custom';
   }
   updateChannelProfileVisibility();
