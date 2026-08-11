@@ -608,9 +608,19 @@ function updateBleOptionLabels(){
   }
 }
 
+function applyBleProfileSemantics(){
+  const profile=$('channelScanMode')?.value||'original';
+  const ble=$('bleEnabled');
+  if(profile==='original'&&ble)ble.value='false';
+}
+
 function updateBleTimingControls(){
+  applyBleProfileSemantics();
+  const profile=$('channelScanMode')?.value||'original';
   const enabled=$('bleEnabled')?.value==='true';
-  const custom=($('channelScanMode')?.value||'original')==='custom';
+  const custom=profile==='custom';
+  const ble=$('bleEnabled');
+  if(ble)ble.disabled=(profile==='original');
   for(const id of ['bleScanDurationMs','bleEveryNCycles']){
     const el=$(id);
     if(el)el.disabled=!(custom&&enabled);
@@ -787,7 +797,9 @@ function prepareChannelProfileSave(){
   const mode=$('channelScanMode')?.value||'original';
   let ch24='';
   let ch5='';
-  if(mode==='kg'){
+  if(mode==='original'){
+    if($('bleEnabled'))$('bleEnabled').value='false';
+  }else if(mode==='kg'){
     ch24=WIFI24_RECOMMENDED;
     ch5=WIFI5_COMMON;
     setBleTimingValues(BLE_DURATION_KG_RECOMMENDED,BLE_CYCLES_KG_RECOMMENDED);
@@ -844,7 +856,6 @@ async function loadStatus(){
         if(el)el.value=v;
       }
     }
-    updateBleTimingControls();
     applyLoadedScanProfileConfig(
       j?.config?.wifi24Channels||'',
       j?.config?.wifi5Channels||'',
