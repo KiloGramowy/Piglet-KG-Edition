@@ -4,6 +4,7 @@
 #include "Config.h"
 #include "SDUtils.h"
 #include "MeshNode.h"
+#include "BleScanner.h"
 #include <math.h>
 
 // ---- Splash slogans ----
@@ -598,11 +599,17 @@ static void drawPageStatus(float speedValue) {
     display.print(networksFound5G);
   }
 
-  // Speed (always at same place)
+  // Speed/BLE count (always at same place)
   display.setCursor(0, yLineSpd);
-  display.print("Speed: ");
-  display.print(speedValue, 1);
-  display.print(cfg.speedUnits == "mph" ? " mph" : " km/h");
+  if (cfg.bleEnabled) {
+    BleDiagSnapshot bleSnap = bleScannerDiagSnapshot();
+    display.print("B: ");
+    display.print(bleSnap.uniqueAccepted);
+  } else {
+    display.print("Speed: ");
+    display.print(speedValue, 1);
+    display.print(cfg.speedUnits == "mph" ? " mph" : " km/h");
+  }
 
   // SD (always at same place)
   display.setCursor(0, yLineSD);

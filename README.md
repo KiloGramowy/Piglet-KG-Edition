@@ -96,6 +96,11 @@ used by the WebUI `KG Recommended` scanning profile when BLE is enabled. BLE can
 still be disabled by the user. This is a hardware-tested KG Recommended
 starting profile, not a claim of universal optimum.
 
+✅ OLED note: when `bleEnabled=true`, the existing OLED Speed row shows
+`B: <unique BLE count>`. When `bleEnabled=false`, the original Speed display
+returns. This follows BLE Enabled/Disabled, not the profile name, and does not
+redesign the OLED layout.
+
 ## KG Edition Changes
 
 ### 📍 Startup GPS Backfill — Hardware Validated ✅
