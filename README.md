@@ -42,6 +42,13 @@ possible custom channel and dwell combination has been hardware tested.
 🐷 Original Piglet all-channel scanning remains available as the default/fallback
 mode.
 
+Profile meanings in WebUI:
+
+- 🐷 Original Piglet: upstream-style Wi-Fi scanning, KG BLE disabled
+- ✅ KG Recommended: hardware-tested KG Wi-Fi profile plus fixed BLE timing
+  `1000 ms` / every `5` Wi-Fi cycles when BLE is enabled
+- 🧪 Custom: manual Wi-Fi and BLE timing experiments
+
 ✅ Included in the `kg-c5-ble-lab` KG Recommended profile:
 
 - ✅ BLE timing: `1000 ms` / every `5` Wi-Fi cycles
