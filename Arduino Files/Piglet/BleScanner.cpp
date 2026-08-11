@@ -31,6 +31,7 @@ struct BleDiagState {
   uint32_t uniqueAccepted = 0;
   uint32_t duplicateRejected = 0;
   uint32_t csvRowsWritten = 0;
+  uint32_t startupBackfillRowsRouted = 0;
   uint32_t stopCount = 0;
   uint32_t burstStartMs = 0;
   uint32_t burstStopMs = 0;
@@ -41,6 +42,7 @@ struct BleDiagState {
   uint32_t burstUniqueAccepted = 0;
   uint32_t burstDuplicateRejected = 0;
   uint32_t burstCsvRowsWritten = 0;
+  uint32_t burstStartupBackfillRowsRouted = 0;
   bool burstActive = false;
   bool firstCallbackLogged = false;
   bool stoppedPendingReport = false;
@@ -220,6 +222,7 @@ static void fillSnapshotNoLock(BleDiagSnapshot& out) {
   out.uniqueAccepted = bleDiag.uniqueAccepted;
   out.duplicateRejected = bleDiag.duplicateRejected;
   out.csvRowsWritten = bleDiag.csvRowsWritten;
+  out.startupBackfillRowsRouted = bleDiag.startupBackfillRowsRouted;
   out.stopCount = bleDiag.stopCount;
   out.droppedTotal = bleDropped;
   out.burstStartMs = bleDiag.burstStartMs;
@@ -231,6 +234,7 @@ static void fillSnapshotNoLock(BleDiagSnapshot& out) {
   out.burstUniqueAccepted = bleDiag.burstUniqueAccepted;
   out.burstDuplicateRejected = bleDiag.burstDuplicateRejected;
   out.burstCsvRowsWritten = bleDiag.burstCsvRowsWritten;
+  out.burstStartupBackfillRowsRouted = bleDiag.burstStartupBackfillRowsRouted;
   out.pendingDepth = pendingCount;
   out.ready = bleReady;
   out.active = bleRunning;
@@ -246,6 +250,7 @@ static void prepareBurstDiagNoLock(uint32_t startMs) {
   bleDiag.burstUniqueAccepted = 0;
   bleDiag.burstDuplicateRejected = 0;
   bleDiag.burstCsvRowsWritten = 0;
+  bleDiag.burstStartupBackfillRowsRouted = 0;
   bleDiag.burstActive = true;
   bleDiag.firstCallbackLogged = false;
   bleDiag.stoppedPendingReport = false;
@@ -539,6 +544,26 @@ void bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows) {
                 (unsigned long)snap.csvRowsWritten);
 }
 
+void bleScannerDiagNoteStartupBackfill(uint16_t pendingRows, uint16_t routedRows) {
+  if (pendingRows == 0 && routedRows == 0) return;
+
+  BleDiagSnapshot snap = {};
+  {
+    BleLock lock;
+    if (!lock.ok()) return;
+
+    bleDiag.startupBackfillRowsRouted += routedRows;
+    bleDiag.burstStartupBackfillRowsRouted += routedRows;
+    fillSnapshotNoLock(snap);
+  }
+
+  if (routedRows > 0) {
+    Serial.printf("[KG-BLE] routed to GPS startup backfill rows=%u total=%lu\n",
+                  routedRows,
+                  (unsigned long)snap.startupBackfillRowsRouted);
+  }
+}
+
 void bleScannerDiagAfterDrain() {
   BleDiagSnapshot snap = {};
   bool shouldReport = false;
@@ -552,7 +577,9 @@ void bleScannerDiagAfterDrain() {
     if (bleDiag.stoppedPendingReport && pendingCount == 0) {
       fillSnapshotNoLock(snap);
       shouldReport = true;
-      shouldWarnNoCsv = (snap.burstCallbacks > 0 && snap.burstCsvRowsWritten == 0);
+      shouldWarnNoCsv = (snap.burstCallbacks > 0 &&
+                         snap.burstCsvRowsWritten == 0 &&
+                         snap.burstStartupBackfillRowsRouted == 0);
       shouldClear = bleDiag.clearResultsPending;
       bleDiag.stoppedPendingReport = false;
       bleDiag.clearResultsPending = false;
@@ -565,12 +592,13 @@ void bleScannerDiagAfterDrain() {
     Serial.println("[KG-BLE] WARNING callbacks received but no BLE CSV rows written");
   }
 
-  Serial.printf("[KG-BLE] summary starts=%lu callbacks=%lu pending=%u unique=%lu csv=%lu dropped=%lu\n",
+  Serial.printf("[KG-BLE] summary starts=%lu callbacks=%lu pending=%u unique=%lu csv=%lu startupBackfill=%lu dropped=%lu\n",
                 (unsigned long)snap.startSuccess,
                 (unsigned long)snap.callbackCount,
                 snap.pendingDepth,
                 (unsigned long)snap.uniqueAccepted,
                 (unsigned long)snap.csvRowsWritten,
+                (unsigned long)snap.startupBackfillRowsRouted,
                 (unsigned long)snap.droppedTotal);
 
   if (shouldClear && bleScan && !bleRunning && !bleScan->isScanning()) {
@@ -599,6 +627,7 @@ void bleScannerDiagPrintConfig() {
   Serial.println("[KG-BLE] init FAILED BLE library unavailable");
 }
 void bleScannerDiagNoteDrain(uint16_t, uint16_t) {}
+void bleScannerDiagNoteStartupBackfill(uint16_t, uint16_t) {}
 void bleScannerDiagAfterDrain() {}
 
 #endif

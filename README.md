@@ -24,6 +24,7 @@ Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet
 - ✅ Configurable GPS cache duration
 - ✅ WebUI GPS cache control
 - ✅ 720-minute / 12-hour KG GPS field profile
+- ✅ Startup GPS Backfill for pre-first-fix Wi-Fi/BLE detections
 - ✅ Configurable 2.4 GHz / 5 GHz channel profiles
 - ✅ Per-channel asynchronous scheduler for custom channel profiles
 - ✅ Separate configurable dwell for 2.4 GHz / 5 GHz custom scanning
@@ -67,6 +68,55 @@ all-channel scanning. Empty or `0` dwell values use the existing `scanMode`
 dwell timing when custom channel scanning is active.
 
 ## KG Edition Changes
+
+### 📍 Startup GPS Backfill — Hardware Validated ✅
+
+KG Edition now handles the awkward GPS startup gap without stopping the scan.
+Piglet starts Wi-Fi and BLE scanning immediately, even before the GPS has
+acquired its first accepted fix, but it does not intentionally write those
+startup detections to the final WiGLE CSV as `0.000000,0.000000`.
+
+Before the first quality-approved GPS fix, startup detections are temporarily
+retained on SD in an internal pending store. This applies to both Wi-Fi and BLE.
+When the first accepted GPS fix arrives, Piglet freezes one immutable GPS
+snapshot containing latitude, longitude, altitude, and accuracy. Any Wi-Fi/BLE
+work already in flight is allowed to finish cleanly, then all startup detections
+are replayed with that same first-fix GPS snapshot.
+
+Each replayed detection keeps its original `FirstSeen` timestamp and original
+radio metadata. After replay completes, normal live GPS logging resumes. If GPS
+is later lost, the existing configurable GPS cache takes over; the current KG
+field-tested profile uses:
+
+```ini
+gpsCacheMinutes=720
+```
+
+In short: Startup GPS Backfill solves the **before-first-fix** gap. The
+720-minute GPS cache solves GPS loss **after** a valid fix has already existed.
+
+Real XIAO ESP32-C5 validation:
+
+- Previous behavior in the tested log: `194` startup detections without GPS
+  coordinates (`170` Wi-Fi, `24` BLE).
+- Fixed build: `0` startup `0,0` rows in the validated CSV.
+- Wi-Fi and BLE startup records were both successfully backfilled.
+- Original `FirstSeen` values were preserved.
+- Normal live GPS coordinates resumed after replay.
+
+This is hardware validated on the project XIAO ESP32-C5. It is not a guarantee
+that every environment or hardware setup behaves perfectly.
+
+Intentional tradeoff: all pre-first-fix startup detections receive the same
+first valid GPS snapshot. If the device moves significantly before acquiring
+that first fix, those startup detections are geographically approximate and are
+assigned to the first-fix position. This is deliberate and preferred over
+discarding detections, waiting to scan, or writing `0,0` coordinates.
+
+Startup pending data belongs only to the current boot. If the device never gets
+a valid GPS fix and is rebooted or powered off, stale startup pending data from
+the previous boot is discarded rather than assigned to a potentially unrelated
+location later.
 
 ### Configurable GPS cache timeout
 
@@ -135,11 +185,14 @@ The following items are planned or experimental. They are not implemented yet:
     unsuccessful
   - If "Both" is selected, require confirmed successful upload to both services
     before deletion
-- 🚧 BLE scanning/timing and Wi-Fi coexistence tuning
+- 🚧 BLE scanning/timing controls and Wi-Fi coexistence tuning remain
+  experimental on `kg-c5-ble-lab`.
 - 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
 
-🚧 BLE scanning and BLE timing are not implemented in KG Edition yet.
+🚧 BLE branch work is still experimental. Startup GPS Backfill is hardware
+validated, including BLE startup rows, but BLE WebUI timing controls are not
+implemented yet.
 
 ## Upstream and Credits
 
