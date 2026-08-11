@@ -1,11 +1,13 @@
 #pragma once
 #include <Arduino.h>
 
-#if __has_include("sdkconfig.h")
+#if __has_include(<sdkconfig.h>)
+  #include <sdkconfig.h>
+#elif __has_include("sdkconfig.h")
   #include "sdkconfig.h"
 #endif
 
-#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_NIMBLE_ENABLED) && __has_include(<BLEDevice.h>)
+#if defined(CONFIG_BT_ENABLED) && (defined(CONFIG_NIMBLE_ENABLED) || defined(CONFIG_BT_NIMBLE_ENABLED))
   #define PIGLET_HAS_BLE 1
 #else
   #define PIGLET_HAS_BLE 0
@@ -61,6 +63,7 @@ bool     bleScannerIsScanning();
 bool     bleScannerHasPending();
 bool     bleScannerConsume(BleObservation& out);
 uint32_t bleScannerDroppedCount();
+const char* bleScannerLastStartFailureReason();
 BleDiagSnapshot bleScannerDiagSnapshot();
 void     bleScannerDiagPrintConfig();
 void     bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows);

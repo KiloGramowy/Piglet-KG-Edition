@@ -20,6 +20,7 @@
 #include <Wire.h>
 #include <sys/time.h>
 #include <esp_sleep.h>
+#include <string.h>
 
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
   #include <driver/rtc_io.h>
@@ -83,6 +84,8 @@ static void enterDeepSleep() {
   esp_deep_sleep_start();  // never returns – wake triggers reset
 }
 
+static void bleClearPending(const char* reason);
+
 // ---------------- Button ----------------
 static void onPageChange(uint8_t oldPage, uint8_t newPage) {
   if (newPage == 3) {
@@ -105,7 +108,10 @@ static void onPageChange(uint8_t oldPage, uint8_t newPage) {
   }
 
   // Mesh node page lifecycle — always enter as Node; long-press activates Core
-  if (newPage == 3 || newPage == 5) bleScannerStop();
+  if (newPage == 3 || newPage == 5) {
+    bleScannerStop();
+    bleClearPending("state_transition");
+  }
   if (newPage == 5) enterNodeMode();
   if (oldPage == 5) {
     if (meshCoreActive) exitCoreMode();
@@ -229,6 +235,80 @@ static void drainBlePendingToLog() {
   bleScannerDiagAfterDrain();
 }
 
+static bool bleBurstPending = false;
+static uint32_t blePendingDueCycle = 0;
+static uint32_t bleCycleAnchor = 0;
+static const char* blePendingDeferredReason = nullptr;
+
+static void bleLogDeferredReason(const char* reason) {
+  if (!reason || reason[0] == '\0') reason = "unknown";
+  if (!blePendingDeferredReason || strcmp(blePendingDeferredReason, reason) != 0) {
+    Serial.printf("[KG-BLE] burst deferred reason=%s\n", reason);
+    blePendingDeferredReason = reason;
+  }
+}
+
+static void bleClearPending(const char* reason) {
+  if (bleBurstPending && reason && reason[0] != '\0') {
+    Serial.printf("[KG-BLE] burst pending cleared reason=%s\n", reason);
+  }
+  bleBurstPending = false;
+  blePendingDueCycle = 0;
+  blePendingDeferredReason = nullptr;
+}
+
+static void markBleDueAfterWifiCycle(uint32_t completedCycles) {
+  if (!cfg.bleEnabled || !sdOk || completedCycles == 0) return;
+  if (bleBurstPending || bleScannerIsScanning()) return;
+  if ((completedCycles - bleCycleAnchor) < cfg.bleEveryNCycles) return;
+
+  bleBurstPending = true;
+  blePendingDueCycle = completedCycles;
+  blePendingDeferredReason = nullptr;
+
+  Serial.printf("[KG-BLE] burst due cycle=%lu\n", (unsigned long)completedCycles);
+  Serial.println("[KG-BLE] burst pending");
+}
+
+static void serviceBlePendingBurst(bool allowScan, uint32_t completedCycles) {
+  if (!bleBurstPending) return;
+
+  if (!cfg.bleEnabled) {
+    bleClearPending("config_disabled");
+    return;
+  }
+  if (!sdOk) {
+    bleClearPending("runtime_guard");
+    return;
+  }
+  if (!allowScan) {
+    bleClearPending("scanner_paused");
+    return;
+  }
+  if (bleScannerIsScanning()) {
+    bleLogDeferredReason("ble_already_active");
+    return;
+  }
+  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
+    bleLogDeferredReason("wifi_scan_running");
+    return;
+  }
+
+  blePendingDeferredReason = nullptr;
+  Serial.println("[KG-BLE] pending burst starting");
+  if (bleScannerStartBurst()) {
+    uint32_t anchorCycle = blePendingDueCycle ? blePendingDueCycle : completedCycles;
+    bleClearPending(nullptr);
+    bleCycleAnchor = anchorCycle;
+  } else {
+    const char* reason = bleScannerLastStartFailureReason();
+    Serial.printf("[KG-BLE] burst start failed reason=%s\n",
+                  (reason && reason[0] != '\0') ? reason : "unknown");
+    bleClearPending(nullptr);
+    bleCycleAnchor = completedCycles;
+  }
+}
+
 static void serviceBleLifecycle(bool allowScan) {
   if (!cfg.bleEnabled) {
     if (bleScannerIsScanning()) bleScannerStop();
@@ -241,22 +321,6 @@ static void serviceBleLifecycle(bool allowScan) {
     bleScannerStop();
   }
   drainBlePendingToLog();
-}
-
-static void maybeStartBleAfterWifiCycle(uint32_t completedCycles) {
-  static uint32_t lastBleCycle = 0;
-
-  if (!cfg.bleEnabled || !sdOk || completedCycles == 0) return;
-  if (bleScannerIsScanning()) return;
-  if ((completedCycles - lastBleCycle) < cfg.bleEveryNCycles) return;
-  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return;
-
-  Serial.printf("[KG-BLE] burst due cycle=%lu\n", (unsigned long)completedCycles);
-  if (bleScannerStartBurst()) {
-    lastBleCycle = completedCycles;
-  } else {
-    Serial.println("[KG-BLE] burst skipped after Wi-Fi cycle");
-  }
 }
 
 // ================================================================
@@ -782,14 +846,16 @@ void loop() {
     allowScanForOled = allowScan;
 
     serviceBleLifecycle(allowScan);
+    serviceBlePendingBurst(allowScan, wifiScanCompletedCycles());
 
     if (allowScan) {
-      if (!bleScannerIsScanning()) {
+      if (!bleScannerIsScanning() && !bleBurstPending) {
         uint32_t cyclesBefore = wifiScanCompletedCycles();
         doScanOnce();
         uint32_t cyclesAfter = wifiScanCompletedCycles();
         if (cyclesAfter != cyclesBefore) {
-          maybeStartBleAfterWifiCycle(cyclesAfter);
+          markBleDueAfterWifiCycle(cyclesAfter);
+          serviceBlePendingBurst(allowScan, cyclesAfter);
         }
       }
     }

@@ -53,6 +53,7 @@ bool bleReady = false;
 bool bleRunning = false;
 uint32_t bleEndsAtMs = 0;
 uint32_t bleDropped = 0;
+const char* bleLastStartFailureReason = "none";
 
 BleObservation pending[BLE_PENDING_CAPACITY];
 uint16_t pendingHead = 0;
@@ -380,9 +381,21 @@ bool bleScannerReady() {
 }
 
 bool bleScannerStartBurst() {
-  if (!cfg.bleEnabled) return false;
+  bleLastStartFailureReason = "none";
+
+  if (!cfg.bleEnabled) {
+    bleLastStartFailureReason = "config_disabled";
+    return false;
+  }
   if (!bleReady) bleScannerBegin();
-  if (!bleReady || !bleScan || bleRunning) return false;
+  if (!bleReady || !bleScan) {
+    bleLastStartFailureReason = "init_failed";
+    return false;
+  }
+  if (bleRunning) {
+    bleLastStartFailureReason = "ble_already_active";
+    return false;
+  }
 
   uint32_t startMs = millis();
   uint32_t durationMs = safeBleDurationMs();
@@ -400,6 +413,9 @@ bool bleScannerStartBurst() {
 
   bool ok = bleScan->start(apiSeconds, nullptr, false);
   bool active = ok && bleScan->isScanning();
+  if (!ok || !active) {
+    bleLastStartFailureReason = ok ? "api_not_active" : "api_start_failed";
+  }
 
   {
     BleLock lock;
@@ -409,6 +425,7 @@ bool bleScannerStartBurst() {
         bleDiag.startFailures++;
         bleDiag.burstActive = false;
         bleDiag.clearResultsPending = true;
+        bleLastStartFailureReason = ok ? "api_not_active" : "api_start_failed";
       }
     }
   }
@@ -482,6 +499,10 @@ bool bleScannerConsume(BleObservation& out) {
 uint32_t bleScannerDroppedCount() {
   BleLock lock;
   return lock.ok() ? bleDropped : 0;
+}
+
+const char* bleScannerLastStartFailureReason() {
+  return bleLastStartFailureReason;
 }
 
 BleDiagSnapshot bleScannerDiagSnapshot() {
@@ -568,6 +589,7 @@ bool bleScannerIsScanning() { return false; }
 bool bleScannerHasPending() { return false; }
 bool bleScannerConsume(BleObservation&) { return false; }
 uint32_t bleScannerDroppedCount() { return 0; }
+const char* bleScannerLastStartFailureReason() { return "ble_unavailable"; }
 BleDiagSnapshot bleScannerDiagSnapshot() { return {}; }
 void bleScannerDiagPrintConfig() {
   Serial.printf("[KG-BLE] config enabled=%u duration=%u everyCycles=%u\n",
