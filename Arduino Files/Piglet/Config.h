@@ -15,6 +15,9 @@ static const uint16_t BLE_SCAN_DURATION_MAX_MS     = 5000;
 static const uint16_t BLE_EVERY_N_CYCLES_DEFAULT  = 5;
 static const uint16_t BLE_EVERY_N_CYCLES_MIN      = 1;
 static const uint16_t BLE_EVERY_N_CYCLES_MAX      = 100;
+static const char* SCAN_PROFILE_DEFAULT            = "kg";
+static const uint16_t WIFI24_DWELL_KG_RECOMMENDED_MS = 110;
+static const uint16_t WIFI5_DWELL_KG_RECOMMENDED_MS  = 100;
 
 struct Config {
   String wigleBasicToken;
@@ -25,13 +28,14 @@ struct Config {
   uint32_t gpsBaud     = 9600;
   uint32_t gpsCacheMinutes = GPS_CACHE_DEFAULT_MINUTES;
   String scanMode      = "aggressive"; // aggressive | powersaving
-  uint8_t wifi24ChannelCount = 0;
-  uint8_t wifi24Channels[WIFI24_CHANNEL_MAX_COUNT] = {};
-  uint8_t wifi5ChannelCount = 0;
-  uint8_t wifi5Channels[WIFI5_CHANNEL_MAX_COUNT] = {};
-  uint16_t wifi24DwellMs = 0; // 0 = use scanMode-derived dwell
-  uint16_t wifi5DwellMs = 0;  // 0 = use scanMode-derived dwell
-  bool bleEnabled = false;
+  String scanProfile   = SCAN_PROFILE_DEFAULT; // original | kg | custom
+  uint8_t wifi24ChannelCount = 3;
+  uint8_t wifi24Channels[WIFI24_CHANNEL_MAX_COUNT] = {1, 6, 11};
+  uint8_t wifi5ChannelCount = 4;
+  uint8_t wifi5Channels[WIFI5_CHANNEL_MAX_COUNT] = {36, 40, 44, 48};
+  uint16_t wifi24DwellMs = WIFI24_DWELL_KG_RECOMMENDED_MS; // 0 = use scanMode-derived dwell
+  uint16_t wifi5DwellMs = WIFI5_DWELL_KG_RECOMMENDED_MS;  // 0 = use scanMode-derived dwell
+  bool bleEnabled = true;
   uint16_t bleScanDurationMs = BLE_SCAN_DURATION_DEFAULT_MS;
   uint16_t bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
   String board = "auto"; // auto | s3 | c5 | c6 | c3 | exp  (pins selected at boot; reboot required after change)

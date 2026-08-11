@@ -370,10 +370,11 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         <input id="wifi5Channels" type="hidden">
         <input id="wifi24DwellMs" type="hidden">
         <input id="wifi5DwellMs" type="hidden">
+        <input id="scanProfile" type="hidden" value="kg">
         <div class="cfg-grid">
           <div>
             <label>Scanning profile</label>
-            <select id="channelScanMode" onchange="updateChannelProfileVisibility()">
+            <select id="channelScanMode" onchange="updateChannelProfileVisibility(true)">
               <option value="original">Original Piglet</option>
               <option value="kg">KG Recommended</option>
               <option value="custom">Custom</option>
@@ -596,8 +597,20 @@ function setChannelError(msg){
   el.style.display=msg?'block':'none';
 }
 
+function normalizeScanProfile(v){
+  const s=String(v||'').trim().toLowerCase();
+  return (s==='original'||s==='custom'||s==='kg')?s:'kg';
+}
+
+function setScanProfileValue(profile){
+  const p=normalizeScanProfile(profile);
+  if($('channelScanMode'))$('channelScanMode').value=p;
+  if($('scanProfile'))$('scanProfile').value=p;
+  return p;
+}
+
 function updateBleOptionLabels(){
-  const profile=$('channelScanMode')?.value||'original';
+  const profile=normalizeScanProfile($('channelScanMode')?.value);
   const disabledOpt=document.querySelector('#bleEnabled option[value="false"]');
   const enabledOpt=document.querySelector('#bleEnabled option[value="true"]');
   if(disabledOpt)disabledOpt.textContent='Disabled';
@@ -609,14 +622,14 @@ function updateBleOptionLabels(){
 }
 
 function applyBleProfileSemantics(){
-  const profile=$('channelScanMode')?.value||'original';
+  const profile=normalizeScanProfile($('channelScanMode')?.value);
   const ble=$('bleEnabled');
   if(profile==='original'&&ble)ble.value='false';
 }
 
 function updateBleTimingControls(){
   applyBleProfileSemantics();
-  const profile=$('channelScanMode')?.value||'original';
+  const profile=normalizeScanProfile($('channelScanMode')?.value);
   const enabled=$('bleEnabled')?.value==='true';
   const custom=profile==='custom';
   const ble=$('bleEnabled');
@@ -637,20 +650,6 @@ function parsePositiveIntStrict(v){
   const s=String(v??'').trim();
   if(!/^[0-9]+$/.test(s))return NaN;
   return Number(s);
-}
-
-function canonicalIntString(v){
-  const n=parsePositiveIntStrict(v);
-  return Number.isInteger(n)?String(n):'';
-}
-
-function isKgRecommendedProfileConfig(ch24,ch5,d24,d5,bleDuration,bleCycles){
-  return compactChannels(ch24)===WIFI24_RECOMMENDED
-    && compactChannels(ch5)===WIFI5_COMMON
-    && canonicalIntString(d24)===WIFI24_DWELL_RECOMMENDED
-    && canonicalIntString(d5)===WIFI5_DWELL_RECOMMENDED
-    && canonicalIntString(bleDuration)===BLE_DURATION_KG_RECOMMENDED
-    && canonicalIntString(bleCycles)===BLE_CYCLES_KG_RECOMMENDED;
 }
 
 function validateBleTiming(){
@@ -715,13 +714,12 @@ function applyKgRecommendedProfileValues(){
   setBleTimingValues(BLE_DURATION_KG_RECOMMENDED,BLE_CYCLES_KG_RECOMMENDED);
 }
 
-function applyLoadedScanProfileConfig(ch24,ch5,d24,d5,bleDuration,bleCycles){
+function applyLoadedScanProfileConfig(profile,ch24,ch5,d24,d5){
+  setScanProfileValue(profile);
   const v24=compactChannels(ch24);
   const v5=compactChannels(ch5);
   const d24v=String(d24??'').trim();
   const d5v=String(d5??'').trim();
-  const kgConfig=isKgRecommendedProfileConfig(v24,v5,d24v,d5v,bleDuration,bleCycles);
-  const mode=$('channelScanMode');
 
   if($('wifi24Channels'))$('wifi24Channels').value=v24;
   if($('wifi5Channels'))$('wifi5Channels').value=v5;
@@ -730,12 +728,7 @@ function applyLoadedScanProfileConfig(ch24,ch5,d24,d5,bleDuration,bleCycles){
   setDwellFromConfig('wifi24',d24v);
   setDwellFromConfig('wifi5',d5v);
 
-  if(mode){
-    if(v24===''&&v5==='')mode.value='original';
-    else if(kgConfig)mode.value='kg';
-    else mode.value='custom';
-  }
-  updateChannelProfileVisibility();
+  updateChannelProfileVisibility(false);
 }
 
 function channelsFromProfile(band){
@@ -753,15 +746,22 @@ function channelsFromProfile(band){
   return '';
 }
 
-function updateChannelProfileVisibility(){
-  const profile=$('channelScanMode')?.value||'original';
+function updateChannelProfileVisibility(profileChanged=false){
+  const profile=setScanProfileValue($('channelScanMode')?.value);
   const custom=profile==='custom';
   const kg=profile==='kg';
   const original=profile==='original';
   const controls=$('soloProfileControls');
   if(controls)controls.style.display='grid';
-  if(original)applyOriginalProfileValues();
-  if(kg)applyKgRecommendedProfileValues();
+  if(original){
+    applyOriginalProfileValues();
+    if($('bleEnabled'))$('bleEnabled').value='false';
+  }
+  if(kg){
+    applyKgRecommendedProfileValues();
+    if(profileChanged&&$('bleEnabled'))$('bleEnabled').value='true';
+  }
+  if(custom&&profileChanged&&$('bleEnabled'))$('bleEnabled').value='true';
 
   for(const id of ['wifi24Profile','wifi5Profile','wifi24CustomChannels','wifi5CustomChannels','wifi24DwellMode','wifi24DwellInput','wifi5DwellMode','wifi5DwellInput']){
     const el=$(id);
@@ -779,7 +779,7 @@ function updateChannelProfileVisibility(){
 }
 
 function prepareDwellSave(){
-  const profile=$('channelScanMode')?.value||'original';
+  const profile=normalizeScanProfile($('channelScanMode')?.value);
   let d24='';
   let d5='';
   if(profile==='kg'){
@@ -794,7 +794,7 @@ function prepareDwellSave(){
 }
 
 function prepareChannelProfileSave(){
-  const mode=$('channelScanMode')?.value||'original';
+  const mode=setScanProfileValue($('channelScanMode')?.value);
   let ch24='';
   let ch5='';
   if(mode==='original'){
@@ -848,7 +848,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','homeSsid','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)&&(v===''||v==='(set)'))continue;
@@ -857,12 +857,11 @@ async function loadStatus(){
       }
     }
     applyLoadedScanProfileConfig(
+      j?.config?.scanProfile||'kg',
       j?.config?.wifi24Channels||'',
       j?.config?.wifi5Channels||'',
       j?.config?.wifi24DwellMs||'',
-      j?.config?.wifi5DwellMs||'',
-      j?.config?.bleScanDurationMs||'',
-      j?.config?.bleEveryNCycles||''
+      j?.config?.wifi5DwellMs||''
     );
   }catch(e){console.error('loadStatus',e)}
 }
@@ -940,7 +939,7 @@ async function doSave(){
   if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original Piglet.');
   prepareDwellSave();
   validateBleTiming();
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','scanProfile','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -1208,6 +1207,7 @@ static void handleStatus() {
   c["wifi24DwellMs"] = cfg.wifi24DwellMs > 0 ? String(cfg.wifi24DwellMs) : "";
   c["wifi5DwellMs"] = cfg.wifi5DwellMs > 0 ? String(cfg.wifi5DwellMs) : "";
   c["scanMode"] = cfg.scanMode;
+  c["scanProfile"] = cfg.scanProfile;
   c["bleEnabled"] = cfg.bleEnabled ? "true" : "false";
   c["bleScanDurationMs"] = cfg.bleScanDurationMs;
   c["bleEveryNCycles"] = cfg.bleEveryNCycles;
@@ -1381,6 +1381,7 @@ static void handleSaveConfig() {
     cfg.wardriverPsk    = doc["wardriverPsk"]    | cfg.wardriverPsk;
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
+    cfg.scanProfile     = doc["scanProfile"]     | cfg.scanProfile;
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;

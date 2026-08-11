@@ -200,6 +200,25 @@ static void copyChannelList(const uint8_t* src, uint8_t count,
   }
 }
 
+static void applyOriginalScanProfile() {
+  cfg.wifi24ChannelCount = 0;
+  cfg.wifi5ChannelCount = 0;
+  cfg.wifi24DwellMs = 0;
+  cfg.wifi5DwellMs = 0;
+  cfg.bleEnabled = false;
+}
+
+static void applyKgRecommendedScanProfile() {
+  static const uint8_t wifi24Kg[] = {1, 6, 11};
+  static const uint8_t wifi5Kg[] = {36, 40, 44, 48};
+  copyChannelList(wifi24Kg, (uint8_t)sizeof(wifi24Kg), cfg.wifi24Channels, cfg.wifi24ChannelCount);
+  copyChannelList(wifi5Kg, (uint8_t)sizeof(wifi5Kg), cfg.wifi5Channels, cfg.wifi5ChannelCount);
+  cfg.wifi24DwellMs = WIFI24_DWELL_KG_RECOMMENDED_MS;
+  cfg.wifi5DwellMs = WIFI5_DWELL_KG_RECOMMENDED_MS;
+  cfg.bleScanDurationMs = BLE_SCAN_DURATION_DEFAULT_MS;
+  cfg.bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
+}
+
 static void writeChannelList(File& f, const uint8_t* channels, uint8_t count) {
   for (uint8_t i = 0; i < count; i++) {
     if (i > 0) f.print(",");
@@ -228,6 +247,11 @@ void cfgAssignKV(const String& k, const String& v) {
   }
   else if (k == "scanMode") {
     if (v == "aggressive" || v == "powersaving") cfg.scanMode = v;
+  }
+  else if (k == "scanProfile") {
+    String vv = v; vv.toLowerCase();
+    if (vv == "original" || vv == "kg" || vv == "custom") cfg.scanProfile = vv;
+    else cfg.scanProfile = SCAN_PROFILE_DEFAULT;
   }
   else if (k == "wifi24Channels") {
     uint8_t parsed[WIFI24_CHANNEL_MAX_COUNT] = {};
@@ -330,6 +354,12 @@ void cfgAssignKV(const String& k, const String& v) {
 }
 
 void validateConfig() {
+  cfg.scanProfile.trim();
+  cfg.scanProfile.toLowerCase();
+  if (cfg.scanProfile != "original" &&
+      cfg.scanProfile != "kg" &&
+      cfg.scanProfile != "custom")
+    cfg.scanProfile = SCAN_PROFILE_DEFAULT;
   if (cfg.gpsCacheMinutes < GPS_CACHE_MIN_MINUTES)
     cfg.gpsCacheMinutes = GPS_CACHE_DEFAULT_MINUTES;
   if (cfg.gpsCacheMinutes > GPS_CACHE_MAX_MINUTES)
@@ -340,6 +370,12 @@ void validateConfig() {
   if (cfg.bleEveryNCycles < BLE_EVERY_N_CYCLES_MIN ||
       cfg.bleEveryNCycles > BLE_EVERY_N_CYCLES_MAX)
     cfg.bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
+
+  if (cfg.scanProfile == "original") {
+    applyOriginalScanProfile();
+  } else if (cfg.scanProfile == "kg") {
+    applyKgRecommendedScanProfile();
+  }
 }
 
 // ---------------- Load / Save ----------------
@@ -359,15 +395,21 @@ bool loadConfigFromSD() {
       return false;
     }
 
+    bool sawScanProfile = false;
     while (f.available()) {
       String line = f.readStringUntil('\n');
       String k, v;
       if (parseKeyValueLine(line, k, v)) {
+        if (k == "scanProfile") sawScanProfile = true;
         cfgAssignKV(k, v);
       }
     }
     f.close();
 
+    if (!sawScanProfile) {
+      cfg.scanProfile = SCAN_PROFILE_DEFAULT;
+      cfg.bleEnabled = true;
+    }
     validateConfig();
 
     Serial.println("[CFG] Loaded config from /wardriver.cfg:");
@@ -378,6 +420,7 @@ bool loadConfigFromSD() {
     Serial.print("      gpsBaud:       "); Serial.println(cfg.gpsBaud);
     Serial.print("      gpsCacheMin:   "); Serial.println(cfg.gpsCacheMinutes);
     Serial.print("      scanMode:      "); Serial.println(cfg.scanMode);
+    Serial.print("      scanProfile:   "); Serial.println(cfg.scanProfile);
     Serial.print("      wifi24Ch:      "); Serial.println(cfg.wifi24ChannelCount);
     Serial.print("      wifi5Ch:       "); Serial.println(cfg.wifi5ChannelCount);
     Serial.print("      wifi24Dwell:   ");
@@ -419,10 +462,15 @@ bool loadConfigFromSD() {
     cfg.wardriverPsk    = doc["wardriverPsk"]    | cfg.wardriverPsk;
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
+    cfg.scanProfile     = doc["scanProfile"]     | cfg.scanProfile;
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
 
+    if (!doc.containsKey("scanProfile")) {
+      cfg.scanProfile = SCAN_PROFILE_DEFAULT;
+      cfg.bleEnabled = true;
+    }
     validateConfig();
 
     // Save as new format
@@ -431,6 +479,7 @@ bool loadConfigFromSD() {
     return ok;
   }
 
+  validateConfig();
   Serial.println("[CFG] No /wardriver.cfg (or legacy json). Using defaults.");
   return false;
 }
@@ -489,6 +538,10 @@ bool saveConfigToSD() {
   f.print("scanMode=");        f.println(cfg.scanMode);
   f.println("");
 
+  f.println("# Explicit scan profile: original, kg, or custom. Missing/invalid defaults to kg.");
+  f.print("scanProfile=");     f.println(cfg.scanProfile);
+  f.println("");
+
   f.println("# Optional solo scan channel lists. Leave empty for original all-channel scanning.");
   f.println("# wifi24Channels accepts 1-14. wifi5Channels is used only on ESP32-C5.");
   f.print("wifi24Channels=");  writeChannelList(f, cfg.wifi24Channels, cfg.wifi24ChannelCount);
@@ -505,7 +558,8 @@ bool saveConfigToSD() {
   else f.println();
   f.println("");
 
-  f.println("# BLE scanning is experimental. Wi-Fi remains the primary scanner.");
+  f.println("# BLE scanning is controlled by scanProfile and bleEnabled.");
+  f.println("# Original Piglet forces BLE off. KG/Custom allow the WebUI BLE selector.");
   f.println("# Passive BLE burst duration: 250-5000 ms. BLE repeats after N completed Wi-Fi cycles: 1-100.");
   f.print("bleEnabled=");        f.println(cfg.bleEnabled ? "true" : "false");
   f.print("bleScanDurationMs="); f.println(cfg.bleScanDurationMs);
