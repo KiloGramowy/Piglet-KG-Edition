@@ -258,9 +258,6 @@ static void prepareBurstDiagNoLock(uint32_t startMs) {
 }
 
 static void recordBurstStop(uint32_t nowMs) {
-  BleDiagSnapshot snap = {};
-  bool shouldLog = false;
-
   {
     BleLock lock;
     if (!lock.ok()) return;
@@ -273,20 +270,6 @@ static void recordBurstStop(uint32_t nowMs) {
     bleDiag.stopCount++;
     bleDiag.stoppedPendingReport = true;
     bleDiag.clearResultsPending = true;
-    fillSnapshotNoLock(snap);
-    shouldLog = true;
-  }
-
-  if (!shouldLog) return;
-
-  Serial.printf("[KG-BLE] stop elapsed=%lu callbacks=%lu pending=%u dropped=%lu\n",
-                (unsigned long)snap.burstElapsedMs,
-                (unsigned long)snap.burstCallbacks,
-                snap.pendingDepth,
-                (unsigned long)snap.droppedTotal);
-
-  if (snap.burstCallbacks == 0) {
-    Serial.println("[KG-BLE] WARNING burst completed with zero callbacks");
   }
 }
 
@@ -527,47 +510,33 @@ void bleScannerDiagPrintConfig() {
 void bleScannerDiagNoteDrain(uint16_t pendingRows, uint16_t csvRows) {
   if (pendingRows == 0 && csvRows == 0) return;
 
-  BleDiagSnapshot snap = {};
   {
     BleLock lock;
     if (!lock.ok()) return;
 
     bleDiag.csvRowsWritten += csvRows;
     bleDiag.burstCsvRowsWritten += csvRows;
-    fillSnapshotNoLock(snap);
   }
-
-  Serial.printf("[KG-BLE] drain accepted=%u unique=%lu duplicates=%lu csv=%lu\n",
-                pendingRows,
-                (unsigned long)snap.uniqueAccepted,
-                (unsigned long)snap.duplicateRejected,
-                (unsigned long)snap.csvRowsWritten);
 }
 
 void bleScannerDiagNoteStartupBackfill(uint16_t pendingRows, uint16_t routedRows) {
   if (pendingRows == 0 && routedRows == 0) return;
 
-  BleDiagSnapshot snap = {};
   {
     BleLock lock;
     if (!lock.ok()) return;
 
     bleDiag.startupBackfillRowsRouted += routedRows;
     bleDiag.burstStartupBackfillRowsRouted += routedRows;
-    fillSnapshotNoLock(snap);
-  }
-
-  if (routedRows > 0) {
-    Serial.printf("[KG-BLE] routed to GPS startup backfill rows=%u total=%lu\n",
-                  routedRows,
-                  (unsigned long)snap.startupBackfillRowsRouted);
   }
 }
 
 void bleScannerDiagAfterDrain() {
   BleDiagSnapshot snap = {};
   bool shouldReport = false;
+  bool shouldWarnZeroCallbacks = false;
   bool shouldWarnNoCsv = false;
+  bool shouldWarnDrops = false;
   bool shouldClear = false;
 
   {
@@ -577,9 +546,11 @@ void bleScannerDiagAfterDrain() {
     if (bleDiag.stoppedPendingReport && pendingCount == 0) {
       fillSnapshotNoLock(snap);
       shouldReport = true;
+      shouldWarnZeroCallbacks = (snap.burstCallbacks == 0);
       shouldWarnNoCsv = (snap.burstCallbacks > 0 &&
                          snap.burstCsvRowsWritten == 0 &&
                          snap.burstStartupBackfillRowsRouted == 0);
+      shouldWarnDrops = (snap.burstPendingDropped > 0);
       shouldClear = bleDiag.clearResultsPending;
       bleDiag.stoppedPendingReport = false;
       bleDiag.clearResultsPending = false;
@@ -588,18 +559,27 @@ void bleScannerDiagAfterDrain() {
 
   if (!shouldReport) return;
 
-  if (shouldWarnNoCsv) {
-    Serial.println("[KG-BLE] WARNING callbacks received but no BLE CSV rows written");
+  if (shouldWarnZeroCallbacks) {
+    Serial.println("[KG-BLE] WARNING burst completed with zero callbacks");
   }
 
-  Serial.printf("[KG-BLE] summary starts=%lu callbacks=%lu pending=%u unique=%lu csv=%lu startupBackfill=%lu dropped=%lu\n",
-                (unsigned long)snap.startSuccess,
-                (unsigned long)snap.callbackCount,
-                snap.pendingDepth,
-                (unsigned long)snap.uniqueAccepted,
-                (unsigned long)snap.csvRowsWritten,
-                (unsigned long)snap.startupBackfillRowsRouted,
-                (unsigned long)snap.droppedTotal);
+  if (shouldWarnNoCsv) {
+    Serial.println("[KG-BLE] WARNING callbacks received but no direct CSV or startup-backfill rows produced");
+  }
+
+  if (shouldWarnDrops) {
+    Serial.printf("[KG-BLE] WARNING pending/dedupe drops this burst=%lu\n",
+                  (unsigned long)snap.burstPendingDropped);
+  }
+
+  Serial.printf("[KG-BLE] summary elapsed=%lu callbacks=%lu newUnique=%lu csv=%lu startupBackfill=%lu dropped=%lu totalUnique=%lu\n",
+                (unsigned long)snap.burstElapsedMs,
+                (unsigned long)snap.burstCallbacks,
+                (unsigned long)snap.burstUniqueAccepted,
+                (unsigned long)snap.burstCsvRowsWritten,
+                (unsigned long)snap.burstStartupBackfillRowsRouted,
+                (unsigned long)snap.burstPendingDropped,
+                (unsigned long)snap.uniqueAccepted);
 
   if (shouldClear && bleScan && !bleRunning && !bleScan->isScanning()) {
     bleScan->clearResults();

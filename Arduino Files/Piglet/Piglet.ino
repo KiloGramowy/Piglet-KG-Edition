@@ -234,10 +234,6 @@ static void drainBlePendingToLog() {
 
   if (!startupQueue && csvWrote > 0 && logFile) {
     logFile.flush();
-    Serial.printf("[KG-BLE] Wrote %u row(s)%s%s\n",
-                  csvWrote,
-                  gpsSnap.usedFix ? " (GPS fix)" : "",
-                  gpsSnap.usedCache ? " (GPS cache)" : "");
   }
   if (startupQueue) {
     bleScannerDiagNoteStartupBackfill(drained, startupRouted);
