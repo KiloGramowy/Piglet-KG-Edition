@@ -10,6 +10,12 @@
 #endif
 
 static const char* CFG_PATH = "/wardriver.cfg";
+static const char* WIGLE_LEGACY_PLACEHOLDER = "EnterWigleTokenForUseTokenHere";
+static const char* WDGWARS_LEGACY_PLACEHOLDER = "EnterWatchDogsGoAPITokenHere";
+
+static bool credentialConfigured(const String& raw, const char* legacyPlaceholder);
+static void normalizeUploadCredential(String& value, const char* legacyPlaceholder,
+                                      const char* diagnostic);
 
 // ---------------- Board / Pin detection ----------------
 
@@ -49,6 +55,14 @@ bool wardriverIsC5() {
   String n = String(pins.name);
   n.toUpperCase();
   return (n.indexOf("C5") >= 0);
+}
+
+bool wigleConfigured() {
+  return credentialConfigured(cfg.wigleBasicToken, WIGLE_LEGACY_PLACEHOLDER);
+}
+
+bool wdgwarsConfigured() {
+  return credentialConfigured(cfg.wdgwarsApiKey, WDGWARS_LEGACY_PLACEHOLDER);
 }
 
 // ---------------- Parsing helpers ----------------
@@ -101,6 +115,32 @@ static bool parseUint32Strict(const String& raw, uint32_t& out) {
 
   out = (uint32_t)acc;
   return true;
+}
+
+static bool equalsIgnoreCase(const String& a, const char* b) {
+  if (!b) return false;
+  String aa = a;
+  String bb = String(b);
+  aa.toLowerCase();
+  bb.toLowerCase();
+  return aa == bb;
+}
+
+static bool credentialConfigured(const String& raw, const char* legacyPlaceholder) {
+  String s = raw;
+  s.trim();
+  if (s.length() < 8) return false;
+  if (equalsIgnoreCase(s, legacyPlaceholder)) return false;
+  return true;
+}
+
+static void normalizeUploadCredential(String& value, const char* legacyPlaceholder,
+                                      const char* diagnostic) {
+  value.trim();
+  if (equalsIgnoreCase(value, legacyPlaceholder)) {
+    value = "";
+    Serial.println(diagnostic);
+  }
 }
 
 static bool parseDwellMs(const String& raw, uint16_t& out) {
@@ -354,6 +394,11 @@ void cfgAssignKV(const String& k, const String& v) {
 }
 
 void validateConfig() {
+  normalizeUploadCredential(cfg.wigleBasicToken, WIGLE_LEGACY_PLACEHOLDER,
+                            "[CFG] Legacy WiGLE placeholder ignored");
+  normalizeUploadCredential(cfg.wdgwarsApiKey, WDGWARS_LEGACY_PLACEHOLDER,
+                            "[CFG] Legacy WDGoWars placeholder ignored");
+
   cfg.scanProfile.trim();
   cfg.scanProfile.toLowerCase();
   if (cfg.scanProfile != "original" &&
@@ -432,7 +477,7 @@ bool loadConfigFromSD() {
     Serial.print("      BLE:           "); Serial.println(cfg.bleEnabled ? "enabled" : "disabled");
     Serial.print("      BLE duration:  "); Serial.println(cfg.bleScanDurationMs);
     Serial.print("      BLE cycles:    "); Serial.println(cfg.bleEveryNCycles);
-    Serial.print("      wigle token:   "); Serial.println(cfg.wigleBasicToken.length() ? "(set)" : "(empty)");
+    Serial.print("      wigle token:   "); Serial.println(wigleConfigured() ? "(set)" : "(empty)");
     return true;
   }
 

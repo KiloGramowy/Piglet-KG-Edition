@@ -607,11 +607,11 @@ void setup() {
 
   lastStaStatus = WiFi.status();
 
-  // Boot upload: WDGoWars first (if key set), then WiGLE (if token set),
+  // Boot upload: WDGoWars first (if configured), then WiGLE (if configured),
   // then move files. Requires STA connection and SD card.
   {
-    bool hasWigle = cfg.wigleBasicToken.length() > 0;
-    bool hasWdg   = cfg.wdgwarsApiKey.length()   > 0;
+    bool hasWigle = wigleConfigured();
+    bool hasWdg   = wdgwarsConfigured();
 
     if (staOk && sdOk && (hasWigle || hasWdg)) {
       Serial.print("[UPLOAD] STA connected. Services: ");
@@ -634,8 +634,10 @@ void setup() {
       } else {
         Serial.println("[UPLOAD] Auto-upload disabled (maxBootUploads=0). Use web UI.");
       }
+    } else if (!hasWigle && !hasWdg) {
+      Serial.println("[UPLOAD] No upload services configured — skipping boot upload");
     } else {
-      Serial.println("[UPLOAD] Upload not attempted (STA/SD not ready or no tokens set).");
+      Serial.println("[UPLOAD] Upload not attempted (STA/SD not ready).");
     }
   }
 

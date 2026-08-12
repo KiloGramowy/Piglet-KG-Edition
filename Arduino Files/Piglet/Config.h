@@ -86,5 +86,7 @@ String trimCopy(String s);
 bool parseKeyValueLine(const String& lineIn, String& keyOut, String& valOut);
 void cfgAssignKV(const String& k, const String& v);
 void validateConfig();
+bool wigleConfigured();
+bool wdgwarsConfigured();
 bool loadConfigFromSD();
 bool saveConfigToSD();
