@@ -342,12 +342,18 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     <div class="cfg-grid">
       <div>
         <label>WiGLE Basic Token</label>
-        <input id="wigleBasicToken" placeholder="Enter 'Encoded for use' token from wigle.net/account">
+        <div class="row">
+          <input id="wigleBasicToken" type="password" placeholder="Enter 'Encoded for use' token from wigle.net/account" onfocus="prepareSecretEdit(this)">
+          <button type="button" class="btn-sm" onclick="clearSavedSecret('wigleBasicToken')">Clear</button>
+        </div>
         <a href="https://wigle.net/account" target="_blank" rel="noopener" style="font-size:12px;margin-top:5px;display:inline-block">&rarr; Get your API Key here</a>
       </div>
       <div>
         <label>WDGoWars API Key</label>
-        <input id="wdgwarsApiKey" placeholder="API key from wdgwars.pl/profile (leave empty to disable)">
+        <div class="row">
+          <input id="wdgwarsApiKey" type="password" placeholder="API key from wdgwars.pl/profile" onfocus="prepareSecretEdit(this)">
+          <button type="button" class="btn-sm" onclick="clearSavedSecret('wdgwarsApiKey')">Clear</button>
+        </div>
         <a href="https://wdgwars.pl/profile/" target="_blank" rel="noopener" style="font-size:12px;margin-top:5px;display:inline-block">&rarr; Get your API Key here</a>
       </div>
       <div>
@@ -578,10 +584,12 @@ function formatBytes(b){
 /* ---- Masked config keys that should not be filled back into form ---- */
 const SECRET_SAVED_VALUE='************';
 const SECRET_SAVED_FLAG='saved';
-const maskedKeys=new Set(['homePsk','wardriverPsk']);
+const maskedKeys=new Set(['homePsk','wardriverPsk','wigleBasicToken','wdgwarsApiKey']);
+const clearableSecretKeys=new Set(['wigleBasicToken','wdgwarsApiKey']);
 
 function setSecretFieldState(id,value){
   const el=$(id);if(!el)return;
+  delete el.dataset.secretClear;
   if(value==='(set)'){
     el.value=SECRET_SAVED_VALUE;
     el.dataset.secretState=SECRET_SAVED_FLAG;
@@ -599,10 +607,18 @@ function prepareSecretEdit(el){
   }
 }
 
+function clearSavedSecret(id){
+  const el=$(id);if(!el||!clearableSecretKeys.has(id))return;
+  el.value='';
+  delete el.dataset.secretState;
+  el.dataset.secretClear='1';
+}
+
 function shouldSkipSavedSecret(id,value){
   if(!maskedKeys.has(id))return false;
   const v=String(value??'');
   const el=$(id);
+  if(el&&el.dataset.secretClear==='1')return false;
   return v===''||v==='(set)'||v===SECRET_SAVED_VALUE||
     (el&&el.dataset.secretState===SECRET_SAVED_FLAG);
 }
@@ -1226,8 +1242,14 @@ static bool isWifiPskKey(const String& k) {
   return k == "homePsk" || k == "wardriverPsk";
 }
 
+static bool isApiCredentialKey(const String& k) {
+  return k == "wigleBasicToken" || k == "wdgwarsApiKey";
+}
+
 static bool isSavedSecretPlaceholder(const String& v) {
-  return v.length() == 0 || v == "(set)" || v == WEB_SAVED_SECRET_SENTINEL;
+  String s = v;
+  s.trim();
+  return s == "(set)" || s == WEB_SAVED_SECRET_SENTINEL;
 }
 
 static void handlePing() {
@@ -1302,8 +1324,8 @@ static void handleStatus() {
   doc["bleDedupeDegraded"] = bleSnap.dedupeDegraded;
 
   JsonObject c = doc.createNestedObject("config");
-  c["wigleBasicToken"] = cfg.wigleBasicToken;
-  c["wdgwarsApiKey"]   = cfg.wdgwarsApiKey;
+  c["wigleBasicToken"] = wigleConfigured() ? "(set)" : "";
+  c["wdgwarsApiKey"]   = wdgwarsConfigured() ? "(set)" : "";
   c["homeSsid"] = cfg.homeSsid;
   c["homePsk"] = cfg.homePsk.length() ? "(set)" : "";
   c["wardriverSsid"] = cfg.wardriverSsid;
@@ -1482,7 +1504,10 @@ static void handleSaveConfig() {
     DeserializationError err = deserializeJson(doc, body);
     if (err) { server.send(400, "text/plain", "Bad JSON"); return; }
 
-    cfg.wigleBasicToken = doc["wigleBasicToken"] | cfg.wigleBasicToken;
+    if (doc.containsKey("wigleBasicToken")) {
+      String wigleBasicToken = doc["wigleBasicToken"] | "";
+      if (!isSavedSecretPlaceholder(wigleBasicToken)) cfg.wigleBasicToken = wigleBasicToken;
+    }
     cfg.homeSsid        = doc["homeSsid"]        | cfg.homeSsid;
     cfg.wardriverSsid   = doc["wardriverSsid"]   | cfg.wardriverSsid;
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
@@ -1491,13 +1516,17 @@ static void handleSaveConfig() {
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
+    if (doc.containsKey("wdgwarsApiKey")) {
+      String wdgwarsApiKey = doc["wdgwarsApiKey"] | "";
+      if (!isSavedSecretPlaceholder(wdgwarsApiKey)) cfg.wdgwarsApiKey = wdgwarsApiKey;
+    }
     if (doc.containsKey("homePsk")) {
       String homePsk = doc["homePsk"] | "";
-      if (!isSavedSecretPlaceholder(homePsk)) cfg.homePsk = homePsk;
+      if (homePsk.length() > 0 && !isSavedSecretPlaceholder(homePsk)) cfg.homePsk = homePsk;
     }
     if (doc.containsKey("wardriverPsk")) {
       String wardriverPsk = doc["wardriverPsk"] | "";
-      if (!isSavedSecretPlaceholder(wardriverPsk)) cfg.wardriverPsk = wardriverPsk;
+      if (wardriverPsk.length() > 0 && !isSavedSecretPlaceholder(wardriverPsk)) cfg.wardriverPsk = wardriverPsk;
     }
     validateConfig();
 
@@ -1513,7 +1542,11 @@ static void handleSaveConfig() {
 
       String k, v;
       if (parseKeyValueLine(line, k, v)) {
-        if (isWifiPskKey(k) && isSavedSecretPlaceholder(v)) {
+        if (isWifiPskKey(k) && (v.length() == 0 || isSavedSecretPlaceholder(v))) {
+          any = true;
+          continue;
+        }
+        if (isApiCredentialKey(k) && isSavedSecretPlaceholder(v)) {
           any = true;
           continue;
         }
@@ -1550,6 +1583,11 @@ static void handleReboot() {
 }
 
 static void handleWigleTest() {
+  if (!wigleConfigured()) {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"message\":\"WiGLE not configured\"}");
+    return;
+  }
   bleScannerStop();
   bool ok = wigleTestToken();
 
@@ -1565,14 +1603,14 @@ static void handleWigleTest() {
 }
 
 static void handleWdgwarsTest() {
+  if (!wdgwarsConfigured()) {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"message\":\"WDGoWars not configured\"}");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     server.send(400, "application/json",
                 "{\"ok\":false,\"message\":\"STA WiFi not connected\"}");
-    return;
-  }
-  if (cfg.wdgwarsApiKey.length() < 8) {
-    server.send(400, "application/json",
-                "{\"ok\":false,\"message\":\"No API key configured\"}");
     return;
   }
 
@@ -1590,8 +1628,12 @@ static void handleWdgwarsTest() {
 
 static void handleWdgwarsUploadAll() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
+  if (!wdgwarsConfigured()) {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"message\":\"WDGoWars not configured\"}");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) { server.send(400, "text/plain", "STA WiFi not connected"); return; }
-  if (cfg.wdgwarsApiKey.length() < 8) { server.send(400, "text/plain", "No API key configured"); return; }
 
   bleScannerStop();
   // Pass -1 explicitly: web-triggered uploads bypass the maxBootUploads cap.
@@ -1610,6 +1652,11 @@ static void handleWdgwarsUploadAll() {
 
 static void handleWigleUploadAll() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
+  if (!wigleConfigured()) {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"message\":\"WiGLE not configured\"}");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) { server.send(400, "text/plain", "STA WiFi not connected"); return; }
 
   bleScannerStop();
@@ -1632,6 +1679,11 @@ static void handleWigleUploadAll() {
 
 static void handleWigleUploadOne() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
+  if (!wigleConfigured()) {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"message\":\"WiGLE not configured\"}");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) { server.send(400, "text/plain", "STA WiFi not connected"); return; }
   if (!server.hasArg("name")) { server.send(400, "text/plain", "Missing name"); return; }
 

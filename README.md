@@ -21,7 +21,9 @@ Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet
 
 ## KG Edition Status
 
-✅ Hardware validated on **Seeed Studio XIAO ESP32-C5**.
+✅ Hardware validated where explicitly noted on **Seeed Studio XIAO ESP32-C5**.
+Implemented items below describe current KG Edition behavior; physical
+validation is called out separately in the detailed sections.
 
 Currently implemented:
 
@@ -40,6 +42,9 @@ Currently implemented:
 - ✅ OLED `B:<unique>` BLE count when BLE is enabled
 - ✅ WebUI BLE status pill and `BLE Found` counter
 - ✅ WebUI PSK masking for Home and Wardriver passwords
+- ✅ API credential masking/protection in WebUI and `status.json`
+- ✅ Service-aware WiGLE / WDGoWars upload gating
+- ✅ Standalone boot uploads run only for genuinely configured services
 - ✅ Stop/Start pause/resume semantics for the active session
 
 KG Recommended is the current default profile for this fork:
@@ -71,7 +76,8 @@ Roadmap / still field-tunable:
 - 🧪 Further ESP32-C5 scan-profile validation
 - 🧪 Further BLE / Wi-Fi coexistence tuning
 - 🧪 BLE scan timing refinement across busier environments
-- 📌 Auto Log Retention / Auto Delete based on age or free space
+- 📌 Persistent Diagnostics / Boot Black Box
+- 📌 Auto Log Retention / Auto Delete with a count-based first stage
 
 ## KG Quick Start
 
@@ -107,6 +113,17 @@ Important GPS notes:
 - Long cache windows improve continuity during temporary GPS loss, but can
   attach stale coordinates if the device moves too far before regaining a fix
 
+For upload services, leave a credential empty to disable that service:
+
+```ini
+wigleBasicToken=
+wdgwarsApiKey=
+```
+
+Instructional token/key text belongs in comments or WebUI placeholder text, not
+as an active credential value. Recognized legacy instructional credential values
+are treated as unconfigured at runtime.
+
 These BLE values work on the project XIAO ESP32-C5 and are the fixed BLE timing
 used by the WebUI `KG Recommended` scanning profile when BLE is enabled. BLE can
 still be disabled by the user while KG Recommended remains selected. This is a
@@ -121,7 +138,7 @@ Piglet KG Edition uses explicit scan-profile identity:
 - `scanProfile=original` - Original Piglet compatibility mode with upstream-style
   all-channel Wi-Fi scanning
 - `scanProfile=custom` - manual channel, dwell, and BLE timing values from
-  `config.txt`
+  `wardriver.cfg`
 
 Profile identity comes from `scanProfile`. Select the intended profile
 explicitly with that key.
@@ -204,6 +221,42 @@ gpsCacheMinutes=3
 Long GPS cache periods can associate detections with an older location if the
 device continues moving while GPS remains unavailable.
 
+Real field note: during one XIAO ESP32-C5 mobile test the device spent roughly
+15:10 to 16:12 in the London Underground / metro environment, where normal GNSS
+reception was not realistically available. With the long configured GPS cache,
+scanning and logging continued, and the inspected logs did not contain `0,0`
+coordinate rows. This validates scanning/logging continuity during GPS loss; it
+does not mean Piglet reconstructed the true underground route. Cached
+last-known coordinates may become geographically stale while the device keeps
+moving without a fresh fix.
+
+### Service-aware boot uploads — WDGoWars-only Hardware Validated ✅
+
+WiGLE and WDGoWars are independently configured upload services. An empty
+credential disables that service, and known legacy instructional credential
+placeholders are treated as unconfigured. An unconfigured service performs no
+intentional upload-network work: no DNS lookup, TLS connection, HTTP request, or
+upload retry for that service.
+
+`maxBootUploads` controls how many eligible pending CSV files the boot uploader
+may process, but it does not enable an otherwise unconfigured service. With
+WDGoWars configured and WiGLE empty, Piglet uploads only to WDGoWars. That
+WDGoWars-only boot path was physically validated on the real XIAO ESP32-C5:
+after WDGoWars upload completion, `autoStartAfterUpload` transitioned directly
+into normal wardriving without waiting on WiGLE.
+
+Existing dual-service support remains when both services are configured. The
+WiGLE-only and dual-service combinations are source-audited here, but are not
+claimed as hardware validated by this note.
+
+### Manual upload behavior caveat
+
+The historically named WebUI WiGLE **Upload All CSVs** action still uses the
+older combined batch path. When both upload services are configured, that path
+can process WDGoWars first and WiGLE second, even though the button is
+WiGLE-oriented. Service gating still prevents an unconfigured service from doing
+network work.
+
 ### Configurable scanning profiles and dwell
 
 KG Edition adds explicit solo scanning profiles, custom 2.4 GHz / 5 GHz channel
@@ -272,9 +325,11 @@ BLE unique-device tracking uses a dynamic in-memory dedupe table:
 - No fixed device-count limit
 - Practical capacity depends on available ESP32-C5 heap
 
-The old fixed BLE dedupe ceiling has been removed. Hardware validation on a real
-XIAO ESP32-C5 recorded `211` unique BLE devices in one field session, confirming
-behavior beyond the former ceiling without claiming a maximum.
+The old fixed BLE dedupe ceiling has been removed. A later real mobile XIAO
+ESP32-C5 field session recorded `754` BLE rows representing `754` unique BLE
+identities, with no duplicate BLE rows by MAC in that CSV. This provides
+substantially stronger hardware validation beyond the former fixed `200`-device
+ceiling without claiming that `754` is a maximum.
 
 If the ESP32 cannot allocate memory to grow BLE tracking, Piglet enters a
 degraded BLE tracking state. BLE logging continues, the exact unique count
@@ -337,7 +392,29 @@ In Piglet KG Edition:
 - Deep sleep closes the log before sleep.
 - Reboot naturally starts a new runtime session.
 
-### WebUI configuration and PSK masking
+### CSV rotation field validation
+
+Real XIAO ESP32-C5 field logs validated the existing 100,000-row CSV rotation.
+One log reached exactly `100,000` data rows and rotated to a new CSV; another
+later session also reached exactly `100,000` data rows. In the clearest observed
+rotation, the previous CSV ended at about 15:10:59 and the next CSV started in
+the same second, with scanning continuing rather than showing the multi-minute
+gap seen around suspected resets. Expected CSV rotation should not be confused
+with a reboot or restart.
+
+### Unexpected reset field observation
+
+The same field day also produced CSV timing that strongly suggested unexpected
+interruptions/restarts around approximately 13:27, 13:36, and 13:38. One
+resulting CSV contained only about 21 seconds of logging. The cause is unknown:
+no reset reason was captured, so this is not attributed to watchdog, brownout,
+software reboot, power fault, SD failure, BLE failure, or any other specific
+subsystem.
+
+This unresolved observation is one reason Persistent Diagnostics / Boot Black
+Box is the next planned feature.
+
+### WebUI configuration and credential protection
 
 The primary WebUI configuration fields are ordered as:
 
@@ -347,18 +424,31 @@ Home SSID | Wardriver SSID
 Home PSK  | Wardriver PSK
 ```
 
-Home and Wardriver PSK fields are visually shown as saved/masked when
+Home PSK and Wardriver PSK fields are visually shown as saved/masked when
 configured. Actual passwords are not returned by `/status.json`; the endpoint
 exposes only `"(set)"` or an empty value for those fields.
 
 Leaving a masked PSK untouched preserves the saved password. Entering a
 replacement password updates it normally.
 
+WiGLE Basic Token and WDGoWars API Key are also visually masked when saved.
+`/status.json` returns only `"(set)"` or `""` for those API credentials and does
+not intentionally echo real token/key values back through the WebUI API.
+
+For API credentials:
+
+- leaving a saved masked value untouched preserves it
+- entering a replacement token/key updates it
+- pressing **Clear** intentionally disables/removes that credential
+
 This is WebUI/API masking behavior, not SD-card config encryption.
 
-### Current build status
+### Last recorded exact build-size measurement
 
-Latest manual Arduino IDE verify after the BLE Found WebUI update:
+The following manual Arduino IDE verify numbers are the last recorded exact
+build-size measurement before the service-aware upload gating update. The
+service-gating build was compiled and flashed for the hardware test, but exact
+new build-size numbers were not recorded in this task.
 
 ```text
 Sketch uses 1,898,927 bytes (56%) of program storage space.
@@ -376,13 +466,33 @@ The following items are planned or experimental:
 - 🧪 Further BLE comparative field profiles and Wi-Fi/BLE coexistence tuning
 - 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
   hardware testing
-- 📌 Automatic Log Retention / Auto Delete based on upload success, age, and
-  free space
+- 📌 Persistent Diagnostics / Boot Black Box: preserve diagnostics for the last
+  30 boot sessions, including reset reason, boot/wakeup context, per-boot
+  runtime/debug logs, WebUI diagnostic history, and individual diagnostic-log
+  downloads. Diagnostics must never expose API keys or PSKs; debug files are
+  separate from wardriving CSV data, and debug retention is separate from future
+  wardrive-log retention.
+- 📌 Automatic Log Retention / Auto Delete: planned count-based first stage with
+  a WebUI **Logs to keep** setting, intended default `10`. Active CSVs,
+  pending/unuploaded CSVs, and partially completed multi-service uploads are
+  never eligible for automatic deletion. Only safely completed upload data may
+  become eligible; Piglet should keep the newest configured number of eligible
+  logs and delete the oldest eligible logs only after the count exceeds the
+  setting. `0` may be considered as an explicit disabled state if confirmed
+  during implementation design.
 
 🚧 Further BLE tuning remains experimental. Startup GPS Backfill is hardware
 validated, including BLE startup rows. KG Recommended BLE timing is
 hardware-tested at `1000 ms` / every `5` Wi-Fi cycles; other BLE profiles remain
 field-test candidates.
+
+🚧 Auto Log Retention must first establish safe per-service completion semantics:
+the current dual-service upload logic may move a CSV to `/uploaded` after at
+least one configured service succeeds, even if another configured service fails.
+Therefore `/uploaded` must not be treated as proof that every configured service
+successfully received a file. Age-based and free-space-based retention are not
+part of the first planned stage and may be considered later only if field use
+justifies them.
 
 The repository is usable and shareable from `main`.
 
@@ -682,7 +792,7 @@ A sample config file is included in `Arduino Files/Piglet/wardriver.cfg`. The fu
 # Use only the "Encoded for Use" token from wigle.net/account
 # Leave empty to disable WiGLE uploads.
 
-wigleBasicToken=EnterWigleTokenHere
+wigleBasicToken=
 
 # ------------------------------------------------------------
 # WDGoWars
@@ -690,7 +800,7 @@ wigleBasicToken=EnterWigleTokenHere
 # Get your API key at: https://wdgwars.pl/profile/
 # Leave empty to disable WDGoWars uploads.
 
-wdgwarsApiKey=EnterWDGoWarsAPIKeyHere
+wdgwarsApiKey=
 
 # ------------------------------------------------------------
 # Max Automatic Uploads at Boot

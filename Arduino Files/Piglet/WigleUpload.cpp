@@ -13,13 +13,13 @@ static const uint16_t  WDGWARS_PORT = 443;
 bool wigleTestToken() {
   wigleLastHttpCode = 0;
 
-  if (WiFi.status() != WL_CONNECTED) {
-    uploadLastResult = "No STA WiFi";
+  if (!wigleConfigured()) {
+    uploadLastResult = "No token set";
     wigleTokenStatus = -1;
     return false;
   }
-  if (cfg.wigleBasicToken.length() < 8) {
-    uploadLastResult = "No token set";
+  if (WiFi.status() != WL_CONNECTED) {
+    uploadLastResult = "No STA WiFi";
     wigleTokenStatus = -1;
     return false;
   }
@@ -140,14 +140,14 @@ bool uploadFileToWigle(const String& path) {
 
   wigleLastHttpCode = 0;
 
+  if (!wigleConfigured()) {
+    Serial.println("[WiGLE] No Basic token set");
+    uploadLastResult = "No token set";
+    return false;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[WiGLE] Not connected to STA WiFi");
     uploadLastResult = "No STA WiFi";
-    return false;
-  }
-  if (cfg.wigleBasicToken.length() < 8) {
-    Serial.println("[WiGLE] No Basic token set");
-    uploadLastResult = "No token set";
     return false;
   }
   if (!SD.exists(path)) {
@@ -283,12 +283,12 @@ bool uploadFileToWigle(const String& path) {
 bool wdgwarsTestKey() {
   uploadLastResult = "";
 
-  if (WiFi.status() != WL_CONNECTED) {
-    uploadLastResult = "No STA WiFi";
+  if (!wdgwarsConfigured()) {
+    uploadLastResult = "No API key set";
     return false;
   }
-  if (cfg.wdgwarsApiKey.length() < 8) {
-    uploadLastResult = "No API key set";
+  if (WiFi.status() != WL_CONNECTED) {
+    uploadLastResult = "No STA WiFi";
     return false;
   }
 
@@ -374,16 +374,19 @@ bool uploadFileToWdgwars(const String& path) {
   Serial.print("[WDGWars] uploadFileToWdgwars: ");
   Serial.println(path);
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WDGWars] Not connected to STA WiFi");
+  if (!wdgwarsConfigured()) {
+    Serial.println("[WDGWars] No API key set");
+    uploadLastResult = "No API key set";
     return false;
   }
-  if (cfg.wdgwarsApiKey.length() < 8) {
-    Serial.println("[WDGWars] API key too short / not set");
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WDGWars] Not connected to STA WiFi");
+    uploadLastResult = "No STA WiFi";
     return false;
   }
   if (!SD.exists(path)) {
     Serial.println("[WDGWars] File does not exist");
+    uploadLastResult = "File missing";
     return false;
   }
 
@@ -642,6 +645,13 @@ void deleteEmptyCsvs() {
 uint32_t uploadAllCsvsToWigle(int maxFiles) {
   if (!sdOk) { uploadLastResult = "SD not OK"; return 0; }
 
+  bool hasWdg = wdgwarsConfigured();
+  bool hasWigle = wigleConfigured();
+  if (!hasWdg && !hasWigle) {
+    uploadLastResult = "No upload services configured";
+    return 0;
+  }
+
   // Pause scanning during upload to avoid SD contention + WiFi scan interference
   uploadPausedScanWasEnabled = scanningEnabled;
   scanningEnabled = false;
@@ -729,20 +739,20 @@ uint32_t uploadAllCsvsToWigle(int maxFiles) {
 
     // Step 1: WDGoWars first (if API key configured)
     bool wdgOk = false;
-    if (cfg.wdgwarsApiKey.length() >= 8) {
+    if (hasWdg) {
       uploadTargetName = "WDGW UL";
       updateOLED(0);
       wdgOk = uploadFileToWdgwars(paths[i]);
       if (!wdgOk) uploadFailedFiles++;
       Serial.printf("[WDGWars] %s -> %s\n",
                     pathBasename(paths[i]).c_str(), wdgOk ? "OK" : "FAIL");
-      if (i < paths.size() - 1 || cfg.wigleBasicToken.length() >= 8)
+      if (i < paths.size() - 1 || hasWigle)
         delay(1500);  // brief settle between TLS sessions
     }
 
     // Step 2: WiGLE (if token configured)
     bool wigleOk = false;
-    if (cfg.wigleBasicToken.length() >= 8) {
+    if (hasWigle) {
       uploadTargetName = "WiGLE UL";
       updateOLED(0);
       wigleOk = uploadFileToWigle(paths[i]);
@@ -779,7 +789,7 @@ uint32_t uploadAllCsvsToWigle(int maxFiles) {
 
 uint32_t uploadAllCsvsToWdgwars(int maxFiles) {
   if (!sdOk) { uploadLastResult = "SD not OK"; return 0; }
-  if (cfg.wdgwarsApiKey.length() < 8) { uploadLastResult = "No API key"; return 0; }
+  if (!wdgwarsConfigured()) { uploadLastResult = "No API key set"; return 0; }
 
   uploadPausedScanWasEnabled = scanningEnabled;
   scanningEnabled = false;
