@@ -266,7 +266,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     <div class="logo">&#x1f437;</div>
     <div>
       <h1>Piglet KG Edition</h1>
-<p class="sub">XIAO ESP32-C5 Wardriver &bull; based on Piglet v2.58</p>
+<p class="sub">XIAO ESP32-C5 Wardriver &bull; KG v1.0.0 &bull; based on Piglet v2.58</p>
     </div>
   </div>
 
