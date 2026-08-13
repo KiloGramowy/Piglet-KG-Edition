@@ -18,6 +18,9 @@ static const uint16_t BLE_EVERY_N_CYCLES_MAX      = 100;
 static const char* SCAN_PROFILE_DEFAULT            = "kg";
 static const uint16_t WIFI24_DWELL_KG_RECOMMENDED_MS = 110;
 static const uint16_t WIFI5_DWELL_KG_RECOMMENDED_MS  = 100;
+static const uint16_t UPLOADED_LOGS_TO_KEEP_DEFAULT  = 10;
+static const uint16_t UPLOADED_LOGS_TO_KEEP_MIN      = 1;
+static const uint16_t UPLOADED_LOGS_TO_KEEP_MAX      = 9999;
 
 struct Config {
   String wigleBasicToken;
@@ -76,6 +79,11 @@ struct Config {
   // The web UI is still reachable if you connect to the Wardriver AP later,
   // but the device will not hold the STA link open. Requires reboot.
   bool autoStartAfterUpload = false;
+
+  // Retention for CSV files already moved to /uploaded.
+  // Pending /logs files are never affected.
+  bool autoDeleteUploadedLogs = true;
+  uint16_t uploadedLogsToKeep = UPLOADED_LOGS_TO_KEEP_DEFAULT;
 };
 
 const PinMap& detectPinsByChip();

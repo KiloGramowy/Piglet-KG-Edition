@@ -391,6 +391,21 @@ void cfgAssignKV(const String& k, const String& v) {
     String vv = v; vv.toLowerCase();
     cfg.autoStartAfterUpload = (vv == "true" || vv == "1");
   }
+  else if (k == "autoDeleteUploadedLogs") {
+    String vv = v; vv.toLowerCase();
+    cfg.autoDeleteUploadedLogs = (vv == "true" || vv == "1" || vv == "enabled" || vv == "on");
+  }
+  else if (k == "uploadedLogsToKeep") {
+    uint32_t n = 0;
+    if (parseUint32Strict(v, n) &&
+        n >= UPLOADED_LOGS_TO_KEEP_MIN &&
+        n <= UPLOADED_LOGS_TO_KEEP_MAX) {
+      cfg.uploadedLogsToKeep = (uint16_t)n;
+    } else {
+      cfg.uploadedLogsToKeep = UPLOADED_LOGS_TO_KEEP_DEFAULT;
+      Serial.println("[CFG] Invalid uploadedLogsToKeep ignored");
+    }
+  }
 }
 
 void validateConfig() {
@@ -415,6 +430,9 @@ void validateConfig() {
   if (cfg.bleEveryNCycles < BLE_EVERY_N_CYCLES_MIN ||
       cfg.bleEveryNCycles > BLE_EVERY_N_CYCLES_MAX)
     cfg.bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;
+  if (cfg.uploadedLogsToKeep < UPLOADED_LOGS_TO_KEEP_MIN ||
+      cfg.uploadedLogsToKeep > UPLOADED_LOGS_TO_KEEP_MAX)
+    cfg.uploadedLogsToKeep = UPLOADED_LOGS_TO_KEEP_DEFAULT;
 
   if (cfg.scanProfile == "original") {
     applyOriginalScanProfile();
@@ -511,6 +529,8 @@ bool loadConfigFromSD() {
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
+    cfg.autoDeleteUploadedLogs = doc["autoDeleteUploadedLogs"] | cfg.autoDeleteUploadedLogs;
+    cfg.uploadedLogsToKeep = doc["uploadedLogsToKeep"] | cfg.uploadedLogsToKeep;
 
     if (!doc.containsKey("scanProfile")) {
       cfg.scanProfile = SCAN_PROFILE_DEFAULT;
@@ -654,6 +674,12 @@ bool saveConfigToSD() {
   f.println("# true = wardrive right after uploads complete (headless mode).");
   f.println("# false = stay on home WiFi, keep web UI accessible (default).");
   f.print("autoStartAfterUpload="); f.println(cfg.autoStartAfterUpload ? "true" : "false");
+
+  f.println("");
+  f.println("# Uploaded CSV retention. Only files already in /uploaded are eligible.");
+  f.println("# Pending /logs files are never deleted automatically.");
+  f.print("autoDeleteUploadedLogs="); f.println(cfg.autoDeleteUploadedLogs ? "true" : "false");
+  f.print("uploadedLogsToKeep="); f.println(cfg.uploadedLogsToKeep);
 
   f.flush();
   f.close();

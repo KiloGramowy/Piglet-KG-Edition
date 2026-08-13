@@ -1,6 +1,10 @@
 #include "SDUtils.h"
 #include "BleCsv.h"
 #include "Globals.h"
+#include "Config.h"
+#include <algorithm>
+#include <time.h>
+#include <vector>
 
 // ---- Path helpers ----
 
@@ -50,6 +54,85 @@ String normalizeSdPath(const char* dir, const char* nameIn) {
 
 bool isAllowedDataPath(const String& p) {
   return p.startsWith("/logs/") || p.startsWith("/uploaded/");
+}
+
+// ---- Uploaded CSV retention ----
+
+struct UploadedCsvCandidate {
+  String path;
+  time_t lastWrite;
+};
+
+static bool isUploadedCsvRetentionCandidate(const String& path) {
+  if (!path.startsWith("/uploaded/")) return false;
+  if (!path.endsWith(".csv")) return false;
+  if (currentCsvPath.length() > 0 && path == currentCsvPath) return false;
+  if (pathBasename(path) == "battery_test.csv") return false;
+  return true;
+}
+
+void enforceUploadedCsvRetention() {
+  if (!sdOk || !cfg.autoDeleteUploadedLogs) return;
+
+  uint16_t keep = cfg.uploadedLogsToKeep;
+  if (keep < UPLOADED_LOGS_TO_KEEP_MIN || keep > UPLOADED_LOGS_TO_KEEP_MAX) {
+    keep = UPLOADED_LOGS_TO_KEEP_DEFAULT;
+  }
+
+  File root = SD.open("/uploaded");
+  if (!root || !root.isDirectory()) {
+    if (root) root.close();
+    return;
+  }
+
+  std::vector<UploadedCsvCandidate> candidates;
+  File file = root.openNextFile();
+  while (file) {
+    String path = normalizeSdPath("/uploaded", file.name());
+    bool eligible = !file.isDirectory() && isUploadedCsvRetentionCandidate(path);
+    time_t lastWrite = eligible ? file.getLastWrite() : 0;
+    file.close();
+
+    if (eligible) {
+      UploadedCsvCandidate candidate = {path, lastWrite};
+      candidates.push_back(candidate);
+    }
+
+    file = root.openNextFile();
+  }
+  root.close();
+
+  if (candidates.size() <= keep) return;
+
+  std::sort(candidates.begin(), candidates.end(),
+            [](const UploadedCsvCandidate& a, const UploadedCsvCandidate& b) {
+              if (a.lastWrite != b.lastWrite) return a.lastWrite < b.lastWrite;
+              return a.path < b.path;
+            });
+
+  size_t deleteTarget = candidates.size() - keep;
+  size_t deleted = 0;
+
+  Serial.printf("[RETENTION] enabled keep=%u uploaded=%u\n",
+                (unsigned)keep, (unsigned)candidates.size());
+
+  for (size_t i = 0; i < deleteTarget; ++i) {
+    const String& path = candidates[i].path;
+    if (!isUploadedCsvRetentionCandidate(path)) continue;
+
+    Serial.print("[RETENTION] deleting: ");
+    Serial.println(pathBasename(path));
+
+    if (SD.remove(path)) {
+      ++deleted;
+    } else {
+      Serial.print("[RETENTION] delete failed: ");
+      Serial.println(pathBasename(path));
+    }
+  }
+
+  Serial.printf("[RETENTION] done kept=%u deleted=%u\n",
+                (unsigned)(candidates.size() - deleted), (unsigned)deleted);
 }
 
 // ---- Move to uploaded ----
@@ -118,10 +201,12 @@ bool moveToUploaded(const String& srcPath) {
     }
 
     Serial.println("[SD] copy fallback: OK");
+    enforceUploadedCsvRetention();
     return true;
   }
 
   Serial.println("[SD] Move OK");
+  enforceUploadedCsvRetention();
   return true;
 }
 

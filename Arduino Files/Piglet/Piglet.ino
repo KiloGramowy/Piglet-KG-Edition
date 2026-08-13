@@ -35,6 +35,7 @@
 #include "Scanner.h"
 #include "BleScanner.h"
 #include "StartupGpsBackfill.h"
+#include "ResetHistory.h"
 #include "WigleUpload.h"
 #include "WebUI.h"
 #include "MeshNode.h"
@@ -82,6 +83,7 @@ static void enterDeepSleep() {
   Serial.println("[SLEEP] Goodnight.");
   Serial.flush();
 
+  resetHistoryMarkPlannedShutdown("DEEP_SLEEP");
   esp_deep_sleep_start();  // never returns – wake triggers reset
 }
 
@@ -488,6 +490,7 @@ void setup() {
   }
 
   bleScannerDiagPrintConfig();
+  resetHistoryWriteBootLog();
   startupGpsBackfillBeginSession();
 
   // =========================
