@@ -566,8 +566,6 @@ build is:
 | Partition | `8M with spiffs (3MB APP/1.5MB SPIFFS)` |
 | Upload Speed | `921600` |
 
-OTA / firmware update support is not part of v1.0.0.
-
 ## Field Tested
 
 <p align="center">
@@ -580,14 +578,6 @@ KG Edition development is not just bench testing. The v1.0.0 baseline was shaped
 through real XIAO ESP32-C5 mobile sessions, SD log inspection, upload tests,
 GPS-loss scenarios, BLE/Wi-Fi coexistence checks, OLED/WebUI behavior checks,
 and physical reset/deep-sleep validation.
-
-## KG Edition Roadmap
-
-v1.0.0 is the current stable baseline. Future work is intentionally small:
-
-- 📌 v1.0.1: WebUI OTA / firmware update support
-- 🧪 continued mesh Core/Node field validation
-- 🧪 future bug fixes and tuning discovered through field use
 
 The repository is usable and shareable from `main`.
 
