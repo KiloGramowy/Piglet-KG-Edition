@@ -5,6 +5,7 @@
 #include "Display.h"
 #include "WigleUpload.h"
 #include "BleScanner.h"
+#include "ResetHistory.h"
 #include <ArduinoJson.h>
 
 // ---------------- Embedded HTML ----------------
@@ -336,6 +337,15 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     </div>
   </div>
 
+  <!-- ============ RESET HISTORY ============ -->
+  <div class="card">
+    <h3>Diagnostics / Reset History</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <button class="btn-sm" onclick="loadResetHistory()">&#8635; Refresh</button>
+    </div>
+    <div id="resetHistory" style="font-size:14px">Loading&hellip;</div>
+  </div>
+
   <!-- ============ CONFIG ============ -->
   <div class="card">
     <h3>Configuration</h3>
@@ -500,6 +510,19 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
           <option value="false">Disabled &mdash; Stay on Home Wi-Fi (default)</option>
           <option value="true">Enabled &mdash; Disconnect and Wardrive Immediately</option>
         </select>
+      </div>
+      <div class="inner-card cfg-section">
+        <h4>Uploaded Log Retention</h4>
+        <div class="cfg-grid">
+          <div><label>Auto-delete uploaded logs</label>
+            <select id="autoDeleteUploadedLogs" onchange="updateUploadedRetentionControls()">
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </div>
+          <div><label>Logs to keep</label><input id="uploadedLogsToKeep" type="number" value="10" min="1" max="9999" step="1"></div>
+        </div>
+        <div class="field-help">Automatically keeps only the newest N files already marked UPLOADED. Pending /logs files are never deleted. Disable for manual file management.</div>
       </div>
     </div>
     <div class="row mt-md">
@@ -691,6 +714,12 @@ function updateBleTimingControls(){
     if(el)el.disabled=!(custom&&enabled);
   }
   updateBleOptionLabels();
+}
+
+function updateUploadedRetentionControls(){
+  const enabled=$('autoDeleteUploadedLogs')?.value!=='false';
+  const keep=$('uploadedLogsToKeep');
+  if(keep)keep.disabled=!enabled;
 }
 
 function setBleTimingValues(duration,cycles){
@@ -952,7 +981,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload','autoDeleteUploadedLogs','uploadedLogsToKeep']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)){
@@ -970,6 +999,7 @@ async function loadStatus(){
       j?.config?.wifi24DwellMs||'',
       j?.config?.wifi5DwellMs||''
     );
+    updateUploadedRetentionControls();
   }catch(e){console.error('loadStatus',e)}
 }
 
@@ -999,6 +1029,29 @@ async function loadFiles(){
         +'</span></div>';
     }).join('');
   }catch(e){console.error('loadFiles',e)}
+}
+
+/* ---- Reset history ---- */
+async function loadResetHistory(){
+  try{
+    const r=await fetch('/reset-history.json');
+    const j=await r.json();
+    const el=$('resetHistory');
+    if(!j.ok){el.textContent='Reset history unavailable';return;}
+    if(!j.boots||j.boots.length===0){el.textContent='No reset history yet';return;}
+
+    el.innerHTML=j.boots.map(b=>{
+      const path='/debug/boot_'+b.bootId+'.log';
+      return '<div class="file-row">'
+        +'<span class="file-name">'+b.bootId+'</span>'
+        +'<span class="file-stats">'+(b.classification||'OTHER')+'</span>'
+        +'<span class="file-size">'+(b.resetReason||'UNKNOWN')+'</span>'
+        +'<span class="file-size">'+(b.wakeReason||'UNDEFINED')+'</span>'
+        +'<span class="file-size">'+formatBytes(b.size||0)+'</span>'
+        +'<span class="file-actions"><a class="btn-sm" href="/reset-history/view?name='+encodeURIComponent(path)+'" target="_blank" rel="noopener">View Log</a></span>'
+        +'</div>';
+    }).join('');
+  }catch(e){console.error('loadResetHistory',e)}
 }
 
 /* ---- Actions ---- */
@@ -1046,7 +1099,7 @@ async function doSave(){
   if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original Piglet.');
   prepareDwellSave();
   validateBleTiming();
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','scanProfile','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','scanProfile','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload','autoDeleteUploadedLogs','uploadedLogsToKeep'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -1228,7 +1281,8 @@ async function pollUpload(){
 }
 setInterval(pollUpload,1500);
 updateBleTimingControls();
-loadStatus();loadFiles();
+updateUploadedRetentionControls();
+loadStatus();loadFiles();loadResetHistory();
 </script>
 </body>
 </html>
@@ -1250,6 +1304,25 @@ static bool isSavedSecretPlaceholder(const String& v) {
   String s = v;
   s.trim();
   return s == "(set)" || s == WEB_SAVED_SECRET_SENTINEL;
+}
+
+static void sendJsonString(const char* value) {
+  server.sendContent("\"");
+  if (value) {
+    for (const char* p = value; *p; ++p) {
+      char c = *p;
+      if (c == '"' || c == '\\') {
+        char escaped[3] = {'\\', c, '\0'};
+        server.sendContent(escaped);
+      } else if ((uint8_t)c < 0x20) {
+        server.sendContent(" ");
+      } else {
+        char one[2] = {c, '\0'};
+        server.sendContent(one);
+      }
+    }
+  }
+  server.sendContent("\"");
 }
 
 static void handlePing() {
@@ -1350,6 +1423,8 @@ static void handleStatus() {
   c["meshModeOnBoot"] = cfg.meshModeOnBoot;
   c["rotateScreen180"] = cfg.rotateScreen180;
   c["autoStartAfterUpload"] = cfg.autoStartAfterUpload;
+  c["autoDeleteUploadedLogs"] = cfg.autoDeleteUploadedLogs;
+  c["uploadedLogsToKeep"] = cfg.uploadedLogsToKeep;
 
   String output;
   serializeJson(doc, output);
@@ -1407,6 +1482,52 @@ static void handleFiles() {
   String output;
   serializeJson(doc, output);
   server.send(200, "application/json", output);
+}
+
+static void handleResetHistoryJson() {
+  ResetHistoryEntry entries[10];
+  size_t count = resetHistoryList(entries, 10);
+
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+  server.sendContent("{\"ok\":");
+  server.sendContent(sdOk ? "true" : "false");
+  server.sendContent(",\"boots\":[");
+
+  for (size_t i = 0; i < count; ++i) {
+    if (i) server.sendContent(",");
+    server.sendContent("{\"bootId\":");
+    sendJsonString(entries[i].bootId);
+    server.sendContent(",\"classification\":");
+    sendJsonString(entries[i].classification);
+    server.sendContent(",\"resetReason\":");
+    sendJsonString(entries[i].resetReason);
+    server.sendContent(",\"wakeReason\":");
+    sendJsonString(entries[i].wakeReason);
+    server.sendContent(",\"size\":");
+    char sizeText[16];
+    snprintf(sizeText, sizeof(sizeText), "%lu", (unsigned long)entries[i].size);
+    server.sendContent(sizeText);
+    server.sendContent("}");
+  }
+
+  server.sendContent("]}");
+  server.sendContent("");
+}
+
+static void handleResetHistoryView() {
+  if (!sdOk) { server.send(500, "text/plain; charset=utf-8", "SD not available"); return; }
+  if (!server.hasArg("name")) { server.send(400, "text/plain; charset=utf-8", "Missing name"); return; }
+
+  String path = server.arg("name");
+  if (!resetHistoryIsAllowedLogPath(path)) { server.send(403, "text/plain; charset=utf-8", "Forbidden"); return; }
+  if (!SD.exists(path)) { server.send(404, "text/plain; charset=utf-8", "Not found"); return; }
+
+  File file = SD.open(path, FILE_READ);
+  if (!file) { server.send(500, "text/plain; charset=utf-8", "Open failed"); return; }
+
+  server.streamFile(file, "text/plain; charset=utf-8");
+  file.close();
 }
 
 static void handleDownload() {
@@ -1516,6 +1637,8 @@ static void handleSaveConfig() {
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
+    cfg.autoDeleteUploadedLogs = doc["autoDeleteUploadedLogs"] | cfg.autoDeleteUploadedLogs;
+    cfg.uploadedLogsToKeep = doc["uploadedLogsToKeep"] | cfg.uploadedLogsToKeep;
     if (doc.containsKey("wdgwarsApiKey")) {
       String wdgwarsApiKey = doc["wdgwarsApiKey"] | "";
       if (!isSavedSecretPlaceholder(wdgwarsApiKey)) cfg.wdgwarsApiKey = wdgwarsApiKey;
@@ -1579,6 +1702,7 @@ static void handleReboot() {
   server.send(200, "text/plain", "OK");
   server.client().stop();
   delay(200);
+  resetHistoryMarkPlannedShutdown("WEB_REBOOT");
   ESP.restart();                       // never returns
 }
 
@@ -1846,6 +1970,8 @@ void startWebServer() {
   server.on("/", handleRoot);
   server.on("/status.json", handleStatus);
   server.on("/files.json", handleFiles);
+  server.on("/reset-history.json", handleResetHistoryJson);
+  server.on("/reset-history/view", handleResetHistoryView);
   server.on("/download",    handleDownload);
   server.on("/downloadAll", handleDownloadAll);
   server.on("/delete", HTTP_POST, handleDelete);

@@ -14,3 +14,4 @@ String normalizeSdPath(const char* dir, const char* nameIn);
 String pathBasename(const String& p);
 bool   isAllowedDataPath(const String& p);
 bool   moveToUploaded(const String& srcPath);
+void   enforceUploadedCsvRetention();

@@ -1,19 +1,25 @@
 
 # Piglet KG Edition
 
-**Piglet KG Edition** is an ESP32-C5-focused, field-tested fork of Piglet v2.58
-by KiloGramowy.
+**Piglet KG Edition v1.0.0** — a field-tested ESP32-C5 wardriver based on
+Piglet v2.58. 🐷📡
 
-This repository is a direct fork of the original
-[Hamspiced/piglet](https://github.com/Hamspiced/piglet) project. KG Edition is
-focused on incremental, field-tested improvements for mobile wardriving, GPS
-resilience, Wi-Fi scanning performance, BLE scanning, OLED status, and WebUI
-control. The primary hardware target for KG-specific tuning is the
+<p align="center">
+  <img src="docs/images/hero-photo.jpeg" width="700" alt="Piglet KG Edition running on XIAO ESP32-C5">
+</p>
+
+<p align="center"><em>Piglet KG Edition — field-tested XIAO ESP32-C5 wardriver.</em></p>
+
+Piglet KG Edition is a direct fork of the original
+[Hamspiced/piglet](https://github.com/Hamspiced/piglet) project. It keeps the
+spirit and compatibility of upstream Piglet while adding small, reviewable KG
+improvements for mobile wardriving, GPS resilience, dual-band ESP32-C5 scanning,
+BLE visibility, WebUI control, and practical SD/upload maintenance.
+
+The primary KG hardware target is the
 [Seeed Studio XIAO ESP32-C5](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C5-p-6609.html).
-
-KG Edition is not intended to replace upstream Piglet. The goal is to keep the
-original Piglet identity and compatibility where practical while developing
-small, reviewable improvements that can be tested on real hardware.
+KG Edition is not intended to replace upstream Piglet; it is a KG-focused
+edition developed through incremental real-hardware testing.
 
 Current KG development is unified on `main`.
 
@@ -21,31 +27,31 @@ Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet
 
 ## KG Edition Status
 
-✅ Hardware validated where explicitly noted on **Seeed Studio XIAO ESP32-C5**.
-Implemented items below describe current KG Edition behavior; physical
-validation is called out separately in the detailed sections.
+✅ **v1.0.0 is the first stable KG Edition baseline.** It is centered on the
+Seeed Studio XIAO ESP32-C5 and reflects the current hardware-tested field build.
+Validation is called out where it is specific to the real KG device; other
+implemented source features are labelled carefully.
 
-Currently implemented:
+## v1.0.0 Feature Overview
 
-- ✅ Configurable GPS cache duration
-- ✅ WebUI GPS cache control
-- ✅ `720`-minute / 12-hour KG GPS field profile
-- ✅ Startup GPS Backfill for pre-first-fix Wi-Fi/BLE detections
-- ✅ Explicit scan profiles: `original`, `kg`, and `custom`
-- ✅ KG Recommended ESP32-C5 scan profile
-- ✅ Configurable 2.4 GHz / 5 GHz channel profiles
-- ✅ Per-channel asynchronous scheduler for custom channel profiles
-- ✅ Separate configurable dwell for 2.4 GHz / 5 GHz custom scanning
-- ✅ WebUI Scanning (Solo) controls
+- ✅ Seeed Studio XIAO ESP32-C5 primary KG target
+- ✅ Dual-band 2.4 GHz / 5 GHz Wi-Fi scanning on ESP32-C5
+- ✅ KG Recommended scanning profile
+- ✅ Custom 2.4 GHz / 5 GHz channel and dwell control
 - ✅ Passive BLE scanning interleaved with Wi-Fi
 - ✅ Dynamic BLE dedupe with no fixed device-count limit
-- ✅ OLED `B:<unique>` BLE count when BLE is enabled
-- ✅ WebUI BLE status pill and `BLE Found` counter
-- ✅ WebUI PSK masking for Home and Wardriver passwords
-- ✅ API credential masking/protection in WebUI and `status.json`
-- ✅ Service-aware WiGLE / WDGoWars upload gating
-- ✅ Standalone boot uploads run only for genuinely configured services
+- ✅ Configurable GPS cache, including KG `720`-minute field configuration
+- ✅ Startup GPS Backfill for pre-first-fix Wi-Fi/BLE detections
+- ✅ WiGLE-compatible CSV output
+- ✅ WDGoWars and WiGLE upload support
+- ✅ Service-aware credential gating for blank/unconfigured upload services
+- ✅ OLED and WebUI controls, including BLE unique count visibility
 - ✅ Stop/Start pause/resume semantics for the active session
+- ✅ 100,000-row CSV rotation
+- ✅ Mini Reset / Crash History
+- ✅ Uploaded Log Retention
+- 🧪 Mesh Core/Node support is implemented in source and available for further
+  field validation
 
 KG Recommended is the current default profile for this fork:
 
@@ -70,14 +76,6 @@ Profile meanings in WebUI:
   never selected automatically just because values match or differ. Entering
   Custom from a preset opens a clean manual setup; saved Custom settings are
   restored after reboot.
-
-Roadmap / still field-tunable:
-
-- 🧪 Further ESP32-C5 scan-profile validation
-- 🧪 Further BLE / Wi-Fi coexistence tuning
-- 🧪 BLE scan timing refinement across busier environments
-- 📌 Persistent Diagnostics / Boot Black Box
-- 📌 Auto Log Retention / Auto Delete with a count-based first stage
 
 ## KG Quick Start
 
@@ -118,6 +116,13 @@ For upload services, leave a credential empty to disable that service:
 ```ini
 wigleBasicToken=
 wdgwarsApiKey=
+```
+
+Uploaded CSV retention is enabled by default:
+
+```ini
+autoDeleteUploadedLogs=true
+uploadedLogsToKeep=10
 ```
 
 Instructional token/key text belongs in comments or WebUI placeholder text, not
@@ -338,6 +343,12 @@ state.
 
 ### OLED and WebUI BLE status
 
+<p align="center">
+  <img src="docs/images/speedtest.jpeg" width="480" alt="Piglet KG Edition OLED on-device status display">
+</p>
+
+<p align="center"><em>Everything important at a glance — no phone required.</em></p>
+
 When BLE is enabled, the existing OLED Speed row is replaced with the live BLE
 unique count:
 
@@ -402,17 +413,96 @@ the same second, with scanning continuing rather than showing the multi-minute
 gap seen around suspected resets. Expected CSV rotation should not be confused
 with a reboot or restart.
 
-### Unexpected reset field observation
+### Reset / Crash History
 
-The same field day also produced CSV timing that strongly suggested unexpected
-interruptions/restarts around approximately 13:27, 13:36, and 13:38. One
-resulting CSV contained only about 21 seconds of logging. The cause is unknown:
-no reset reason was captured, so this is not attributed to watchdog, brownout,
-software reboot, power fault, SD failure, BLE failure, or any other specific
-subsystem.
+KG Edition v1.0.0 includes a deliberately small Reset / Crash History feature.
+It is intentionally **not** a continuous Black Box and not runtime telemetry.
+Piglet records only the compact boot/reset facts needed to answer: "why did the
+device boot or reboot?"
 
-This unresolved observation is one reason Persistent Diagnostics / Boot Black
-Box is the next planned feature.
+At startup Piglet writes one tiny completed log:
+
+```text
+/debug/boot_XXXXXXXX.log
+```
+
+Each boot log records approximately:
+
+- Boot ID
+- reset reason
+- reset code
+- wake reason
+- wake code
+- planned shutdown state
+- classification
+
+The file is written once at startup and closed immediately. During normal
+wardriving there is no continuous diagnostic logging, no scanner/BLE/GPS debug
+stream, and no active live diagnostic file.
+
+Planned shutdown markers are used for:
+
+- `WEB_REBOOT`
+- `DEEP_SLEEP`
+
+On the next boot the marker is consumed, the reset is classified as planned, and
+the marker is removed. Ordinary power removal is reported using the actual ESP32
+reset reason; `POWER_ON` is not automatically treated as a crash.
+
+The WebUI shows the newest boot history first in the **Diagnostics / Reset
+History** card directly between **Status** and **Configuration**. Every row,
+including the newest boot, has **View Log** for the raw text file.
+
+Maximum history is `10` boot logs. When the 11th recognized
+`boot_XXXXXXXX.log` is created, the oldest reset-history log rolls off
+automatically.
+
+Hardware validation on the real XIAO ESP32-C5 covered:
+
+- `POWER_ON / UNPLANNED`
+- planned WebUI reboot: `ESP_RST_SW` + `WEB_REBOOT` -> `NORMAL / PLANNED`
+- planned Deep Sleep: `ESP_RST_DEEPSLEEP` + `DEEP_SLEEP` -> `NORMAL / PLANNED`
+- GPIO wake after Deep Sleep
+
+This feature resolves the old reset-observation gap without adding a persistent
+runtime diagnostic subsystem.
+
+### Uploaded Log Retention
+
+KG Edition v1.0.0 also adds simple automatic retention for CSV files already in:
+
+```text
+/uploaded/
+```
+
+Defaults:
+
+```ini
+autoDeleteUploadedLogs=true
+uploadedLogsToKeep=10
+```
+
+- Default state: Enabled
+- Default keep count: `10`
+- Valid range: `1..9999`
+- Disabled mode: fully manual file management
+
+The source of truth is intentionally simple: any `/uploaded/*.csv` file already
+shown as uploaded by the WebUI is retention-eligible. Piglet does not add
+per-service completion markers or new upload bookkeeping for this feature.
+
+When a successful upload/processing event moves a CSV into `/uploaded` and the
+uploaded count exceeds the configured limit, Piglet deletes the oldest uploaded
+CSV files until the configured number remains. Age ordering uses SD
+last-write timestamps, with path ordering only as a deterministic tie-breaker.
+
+Pending files in `/logs/*.csv` are **never** automatically deleted by uploaded
+log retention. Manual WebUI **Delete** and **Delete All** controls remain
+available for manual file management.
+
+Real XIAO ESP32-C5 validation: a device with approximately `22` CSV files in
+`/uploaded` was reduced to exactly `10` files after retention was triggered by
+the next successful upload/processing event.
 
 ### WebUI configuration and credential protection
 
@@ -458,41 +548,46 @@ Global variables use 110,988 bytes (33%) of dynamic memory.
 Maximum is 327,680 bytes.
 ```
 
+## Verified XIAO ESP32-C5 Build Settings
+
+The known-good v1.0.0 hardware validation environment for the KG XIAO ESP32-C5
+build is:
+
+| Setting | Value |
+|---------|-------|
+| Arduino IDE | `2.3.10` |
+| ESP32 Arduino core | `3.3.11` |
+| Board | `XIAO_ESP32C5` |
+| USB CDC On Boot | `Enabled` |
+| CPU | `240 MHz` |
+| Flash Frequency | `80 MHz` |
+| Flash Mode | `QIO` |
+| Flash Size | `8 MB` |
+| Partition | `8M with spiffs (3MB APP/1.5MB SPIFFS)` |
+| Upload Speed | `921600` |
+
+OTA / firmware update support is not part of v1.0.0.
+
+## Field Tested
+
+<p align="center">
+  <img src="docs/images/field-test.jpeg" width="580" alt="Piglet KG Edition being carried during a field test">
+</p>
+
+<p align="center"><em>Looks innocent. Counts everything. 🐷📡</em></p>
+
+KG Edition development is not just bench testing. The v1.0.0 baseline was shaped
+through real XIAO ESP32-C5 mobile sessions, SD log inspection, upload tests,
+GPS-loss scenarios, BLE/Wi-Fi coexistence checks, OLED/WebUI behavior checks,
+and physical reset/deep-sleep validation.
+
 ## KG Edition Roadmap
 
-The following items are planned or experimental:
+v1.0.0 is the current stable baseline. Future work is intentionally small:
 
-- 🧪 Further ESP32-C5 mobile wardriving scan-profile tuning
-- 🧪 Further BLE comparative field profiles and Wi-Fi/BLE coexistence tuning
-- 🧪 Additional field-tested improvements based on real XIAO ESP32-C5 logs and
-  hardware testing
-- 📌 Persistent Diagnostics / Boot Black Box: preserve diagnostics for the last
-  30 boot sessions, including reset reason, boot/wakeup context, per-boot
-  runtime/debug logs, WebUI diagnostic history, and individual diagnostic-log
-  downloads. Diagnostics must never expose API keys or PSKs; debug files are
-  separate from wardriving CSV data, and debug retention is separate from future
-  wardrive-log retention.
-- 📌 Automatic Log Retention / Auto Delete: planned count-based first stage with
-  a WebUI **Logs to keep** setting, intended default `10`. Active CSVs,
-  pending/unuploaded CSVs, and partially completed multi-service uploads are
-  never eligible for automatic deletion. Only safely completed upload data may
-  become eligible; Piglet should keep the newest configured number of eligible
-  logs and delete the oldest eligible logs only after the count exceeds the
-  setting. `0` may be considered as an explicit disabled state if confirmed
-  during implementation design.
-
-🚧 Further BLE tuning remains experimental. Startup GPS Backfill is hardware
-validated, including BLE startup rows. KG Recommended BLE timing is
-hardware-tested at `1000 ms` / every `5` Wi-Fi cycles; other BLE profiles remain
-field-test candidates.
-
-🚧 Auto Log Retention must first establish safe per-service completion semantics:
-the current dual-service upload logic may move a CSV to `/uploaded` after at
-least one configured service succeeds, even if another configured service fails.
-Therefore `/uploaded` must not be treated as proof that every configured service
-successfully received a file. Age-based and free-space-based retention are not
-part of the first planned stage and may be considered later only if field use
-justifies them.
+- 📌 v1.0.1: WebUI OTA / firmware update support
+- 🧪 continued mesh Core/Node field validation
+- 🧪 future bug fixes and tuning discovered through field use
 
 The repository is usable and shareable from `main`.
 
@@ -509,6 +604,14 @@ reviewed and integrated selectively rather than treating another fork as KG
 Edition's upstream.
 
 ## Development Philosophy
+
+Piglet's primary job is wardriving. KG Edition favors standalone operation,
+minimal runtime overhead, useful on-device status, resilient GPS behavior,
+controlled WebUI configuration, and practical SD/upload management.
+
+The WebUI is mainly for configuration, maintenance, uploads, and file
+management. It should not be something the user must keep open while
+wardriving.
 
 KG Edition changes are developed incrementally: one focused feature at a time,
 with source review first, compile/test where possible, real XIAO ESP32-C5
@@ -944,6 +1047,16 @@ rotateScreen180=false
 # Reboot required after changing.
 
 autoStartAfterUpload=false
+
+# ------------------------------------------------------------
+# Uploaded Log Retention
+# ------------------------------------------------------------
+# Automatically keeps only the newest N CSV files already in /uploaded.
+# Pending /logs files are never automatically deleted by retention.
+# Values: true or false. Logs-to-keep range: 1-9999.
+
+autoDeleteUploadedLogs=true
+uploadedLogsToKeep=10
 ```
 
 ### Auto-Start Wardriving After Uploads — How to Disable
@@ -1017,6 +1130,8 @@ Entering **page 5** automatically starts ESP-Now node mode. Leaving it (single p
 
 - **Arduino IDE 2.x** or **PlatformIO**
 - **Arduino-ESP32 core** v3.0.0 or later
+- KG v1.0.0 XIAO ESP32-C5 validation used **Arduino IDE 2.3.10** with
+  **ESP32 Arduino core 3.3.11**
 
 ### Required Libraries — XIAO Variant (S3 / C5 / C6)
 
@@ -1048,12 +1163,16 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are built into the ESP32 c
 
 ### Flash Steps
 
-1. Select the correct **XIAO ESP32 board** variant (S3, C5, or C6)
+1. Select the correct **XIAO ESP32 board** variant (for KG v1.0.0 C5 validation:
+   `XIAO_ESP32C5`)
 2. **CRITICAL:** Enable **PSRAM** (required for TLS/HTTPS uploads)
    - Tools → PSRAM → **OPI PSRAM** (C5/C6) or **QSPI PSRAM** (S3)
-3. Use a **large app partition scheme** → **Huge APP (3MB No OTA/1MB SPIFFS)**
-4. Upload firmware  
-5. Insert **FAT32-formatted SD card**  
+3. For the verified XIAO ESP32-C5 build, use **USB CDC On Boot: Enabled**,
+   **CPU: 240 MHz**, **Flash Frequency: 80 MHz**, **Flash Mode: QIO**,
+   **Flash Size: 8 MB**, **Partition: 8M with spiffs (3MB APP/1.5MB SPIFFS)**,
+   and **Upload Speed: 921600**
+4. Upload firmware
+5. Insert **FAT32-formatted SD card**
 6. Add `/wardriver.cfg` to SD card root with your WiGLE API key and WiFi credentials
 7. Restart device with RST button or power cycle
 
