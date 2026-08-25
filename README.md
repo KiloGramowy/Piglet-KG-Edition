@@ -558,6 +558,7 @@ build is:
 | Arduino IDE | `2.3.10` |
 | ESP32 Arduino core | `3.3.11` |
 | Board | `XIAO_ESP32C5` |
+| PSRAM | `OPI PSRAM` |
 | USB CDC On Boot | `Enabled` |
 | CPU | `240 MHz` |
 | Flash Frequency | `80 MHz` |
@@ -1123,6 +1124,31 @@ Entering **page 5** automatically starts ESP-Now node mode. Leaving it (single p
 - KG v1.0.0 XIAO ESP32-C5 validation used **Arduino IDE 2.3.10** with
   **ESP32 Arduino core 3.3.11**
 
+> [!IMPORTANT]
+> ## 🐷 XIAO ESP32-C5 — Required Build Settings
+>
+> Do **not** use the Arduino IDE default board settings.
+>
+> Piglet KG Edition v1.0.0 was validated with:
+>
+> - 🧠 Board: `XIAO_ESP32C5`
+> - ⚙️ ESP32 Arduino Core: `3.3.11`
+> - 🚀 PSRAM: `OPI PSRAM`
+> - 🔌 USB CDC On Boot: `Enabled`
+> - 🧮 CPU Frequency: `240 MHz`
+> - ⚡ Flash Frequency: `80 MHz`
+> - 💾 Flash Mode: `QIO`
+> - 💽 Flash Size: `8 MB`
+> - 📦 Partition Scheme: `8M with spiffs (3MB APP/1.5MB SPIFFS)`
+> - ⬆️ Upload Speed: `921600`
+>
+> **PSRAM is especially important for TLS/HTTPS uploads.**
+>
+> If PSRAM is left disabled, Wi-Fi and DNS may still work normally while
+> WiGLE and WDGoWars uploads can fail with:
+>
+> `TLS connect fail`
+
 ### Required Libraries — XIAO Variant (S3 / C5 / C6)
 
 Install via Arduino Library Manager (`Sketch → Include Library → Manage Libraries`):
@@ -1165,6 +1191,23 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are built into the ESP32 c
 5. Insert **FAT32-formatted SD card**
 6. Add `/wardriver.cfg` to SD card root with your WiGLE API key and WiFi credentials
 7. Restart device with RST button or power cycle
+
+### 🔐 `TLS connect fail`
+
+Before reporting a TLS issue, verify the XIAO ESP32-C5 build settings:
+
+1. Board is `XIAO_ESP32C5`
+2. ESP32 Arduino Core is `3.3.11`
+3. PSRAM is set to `OPI PSRAM`
+4. USB CDC On Boot is `Enabled`
+5. CPU is `240 MHz`
+6. Flash Frequency is `80 MHz`
+7. Flash Mode is `QIO`
+8. Flash Size is `8 MB`
+9. Partition Scheme is `8M with spiffs (3MB APP/1.5MB SPIFFS)`
+
+If Wi-Fi connects and DNS resolves successfully but both WiGLE and WDGoWars
+fail with `TLS connect fail`, check PSRAM first.
 
 ### Where to Order
 
