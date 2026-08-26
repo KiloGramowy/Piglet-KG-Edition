@@ -32,6 +32,47 @@ Seeed Studio XIAO ESP32-C5 and reflects the current hardware-tested field build.
 Validation is called out where it is specific to the real KG device; other
 implemented source features are labelled carefully.
 
+## 📦 Precompiled Firmware
+
+A ready-to-flash **Piglet KG Edition v1.0.0** firmware image for the
+**Seeed Studio XIAO ESP32-C5** is available in the GitHub Release.
+
+No Arduino IDE compilation is required if you use the precompiled image.
+
+➡️ **[Download Piglet KG Edition v1.0.0](https://github.com/KiloGramowy/Piglet-KG-Edition/releases/tag/v1.0.0)**
+
+Firmware:
+
+`Piglet-KG-Edition-v1.0.0-XIAO-ESP32C5-full.bin`
+
+The release includes the matching `.sha256` checksum file together with the
+full flashing instructions and SHA-256 verification information.
+
+> [!IMPORTANT]
+> ## 🐷 XIAO ESP32-C5 — Required Build Settings
+>
+> Do **not** use the Arduino IDE default board settings.
+>
+> Piglet KG Edition v1.0.0 was validated with:
+>
+> - 🧠 Board: `XIAO_ESP32C5`
+> - ⚙️ ESP32 Arduino Core: `3.3.11`
+> - 🚀 PSRAM: `OPI PSRAM`
+> - 🔌 USB CDC On Boot: `Enabled`
+> - 🧮 CPU Frequency: `240 MHz`
+> - ⚡ Flash Frequency: `80 MHz`
+> - 💾 Flash Mode: `QIO`
+> - 💽 Flash Size: `8 MB`
+> - 📦 Partition Scheme: `8M with spiffs (3MB APP/1.5MB SPIFFS)`
+> - ⬆️ Upload Speed: `921600`
+>
+> **PSRAM is especially important for TLS/HTTPS uploads.**
+>
+> If PSRAM is left disabled, Wi-Fi and DNS may still work normally while
+> WiGLE and WDGoWars uploads can fail with:
+>
+> `TLS connect fail`
+
 ## v1.0.0 Feature Overview
 
 - ✅ Seeed Studio XIAO ESP32-C5 primary KG target
@@ -547,25 +588,6 @@ Global variables use 110,988 bytes (33%) of dynamic memory.
 216,692 bytes remain for local variables.
 Maximum is 327,680 bytes.
 ```
-
-## Verified XIAO ESP32-C5 Build Settings
-
-The known-good v1.0.0 hardware validation environment for the KG XIAO ESP32-C5
-build is:
-
-| Setting | Value |
-|---------|-------|
-| Arduino IDE | `2.3.10` |
-| ESP32 Arduino core | `3.3.11` |
-| Board | `XIAO_ESP32C5` |
-| PSRAM | `OPI PSRAM` |
-| USB CDC On Boot | `Enabled` |
-| CPU | `240 MHz` |
-| Flash Frequency | `80 MHz` |
-| Flash Mode | `QIO` |
-| Flash Size | `8 MB` |
-| Partition | `8M with spiffs (3MB APP/1.5MB SPIFFS)` |
-| Upload Speed | `921600` |
 
 ## Field Tested
 
@@ -1123,31 +1145,6 @@ Entering **page 5** automatically starts ESP-Now node mode. Leaving it (single p
 - **Arduino-ESP32 core** v3.0.0 or later
 - KG v1.0.0 XIAO ESP32-C5 validation used **Arduino IDE 2.3.10** with
   **ESP32 Arduino core 3.3.11**
-
-> [!IMPORTANT]
-> ## 🐷 XIAO ESP32-C5 — Required Build Settings
->
-> Do **not** use the Arduino IDE default board settings.
->
-> Piglet KG Edition v1.0.0 was validated with:
->
-> - 🧠 Board: `XIAO_ESP32C5`
-> - ⚙️ ESP32 Arduino Core: `3.3.11`
-> - 🚀 PSRAM: `OPI PSRAM`
-> - 🔌 USB CDC On Boot: `Enabled`
-> - 🧮 CPU Frequency: `240 MHz`
-> - ⚡ Flash Frequency: `80 MHz`
-> - 💾 Flash Mode: `QIO`
-> - 💽 Flash Size: `8 MB`
-> - 📦 Partition Scheme: `8M with spiffs (3MB APP/1.5MB SPIFFS)`
-> - ⬆️ Upload Speed: `921600`
->
-> **PSRAM is especially important for TLS/HTTPS uploads.**
->
-> If PSRAM is left disabled, Wi-Fi and DNS may still work normally while
-> WiGLE and WDGoWars uploads can fail with:
->
-> `TLS connect fail`
 
 ### Required Libraries — XIAO Variant (S3 / C5 / C6)
 
