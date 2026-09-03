@@ -84,7 +84,7 @@ with the full flashing instructions and SHA-256 verification information.
 - ✅ Custom 2.4 GHz / 5 GHz channel and dwell control
 - ✅ Passive BLE scanning interleaved with Wi-Fi
 - ✅ Dynamic BLE dedupe with no fixed device-count limit
-- ✅ Exact Wi-Fi 60-minute BSSID filter with fail-open safety
+- ✅ Exact Wi-Fi BSSID filter with fail-open safety
 - ✅ Configurable GPS cache, including KG `720`-minute field configuration
 - ✅ Startup GPS Backfill for pre-first-fix Wi-Fi/BLE detections
 - ✅ WiGLE-compatible CSV output
@@ -352,37 +352,23 @@ values match or differ, and Original Piglet mode requires
   cycles when BLE is enabled.
 - BLE can be disabled by the user while KG Recommended remains selected.
 
-### 🔥 Wi-Fi 60-Minute BSSID Filter — Hardware Tested ✅
+### 🔥 Wi-Fi BSSID Filter — Hardware Tested ✅
 
-Piglet KG Edition v1.0.1 adds an exact Wi-Fi-only BSSID filter for long
-wardriving sessions. The filter reduces repeated observations from the same
-access point while the radio continues scanning normally.
+Piglet KG Edition v1.0.1 adds an exact Wi-Fi-only BSSID filter designed to
+reduce repeated observations of the same access point from inflating counters,
+CSV files, and upload volume while the radio continues scanning normally.
 
 Without filtering, a stationary or slow-moving Piglet may observe the same AP
 again and again, inflating Wi-Fi counters, CSV row count, and upload volume.
-With the filter enabled, the same BSSID contributes only one accepted Wi-Fi
-observation during its active 60-minute window.
+With the filter enabled, repeated observations of the same BSSID are suppressed
+instead of being counted and logged again and again.
 
 The key is the Wi-Fi **BSSID**, not SSID. Matching uses the complete exact
 48-bit BSSID. There is no Bloom filter, probabilistic matching, or SSID-based
 dedupe.
 
-Per-BSSID timing is exact:
-
-```text
-10:00:00  ACCEPT
-10:20:00  DROP
-10:59:59  DROP
-11:00:00  ACCEPT
-```
-
-- The first observation of a BSSID is accepted.
-- The same BSSID inside the next `3,600,000 ms` is dropped.
-- The timer is per BSSID and starts from the **last accepted** observation.
-- Dropped duplicate observations do **not** refresh or extend the timer.
-- After `3,600,000 ms` from the last accepted observation, the same BSSID may
-  be accepted again.
-- This is not lifetime-unique counting.
+This is not lifetime-unique counting. It is a runtime suppression filter for
+repeated Wi-Fi observations during the current operating session.
 
 The implemented table is built for predictable C5 runtime behavior:
 
@@ -390,7 +376,7 @@ The implemented table is built for predictable C5 runtime behavior:
 - `262144` total slots
 - `16384` buckets
 - `16` ways per bucket
-- Complete BSSID key plus accepted-at timestamp
+- Complete BSSID key tracking
 - Approximately `3 MiB` PSRAM allocation
 - Maximum `16` candidate checks per BSSID
 - No dynamically growing map
@@ -434,13 +420,13 @@ wifiDedupeEnabled=true
 - Default: `true`
 - Existing old configurations with no `wifiDedupeEnabled` key default to
   enabled.
-- Saving `Enabled -> Enabled` preserves the current 60-minute history.
+- Saving `Enabled -> Enabled` preserves the current filter history.
 - Saving `Disabled -> Disabled` leaves the filter off.
 - Saving `Enabled -> Disabled` needs no reboot; PSRAM memory, history, and
   filter stats are discarded, runtime becomes `OFF_BY_USER`, and Wi-Fi
   continues unfiltered.
 - Saving `Disabled -> Enabled` needs no reboot; a fresh PSRAM table is
-  allocated, a fresh 60-minute history begins, and stats restart from zero.
+  allocated, fresh filter history begins, and stats restart from zero.
 - If allocation fails, runtime reports PSRAM fail-open and Wi-Fi continues.
 - Saving an unrelated config option while the filter stays enabled does not
   reset filter history.
@@ -449,8 +435,8 @@ The WebUI **Wi-Fi BSSID Filter** card shows:
 
 - **Runtime** — current filter state
 - **Accepted** — Wi-Fi observations accepted by the current filter instance
-- **Duplicates blocked** — exact matching BSSID observations rejected inside
-  their active 60-minute window
+- **Duplicates blocked** — repeated exact matching BSSID observations rejected
+  by the filter
 - **Overflow accepted** — new Wi-Fi observations accepted fail-open because
   their target bucket could not safely store another live BSSID
 
@@ -458,10 +444,9 @@ These statistics reset when a fresh filter instance begins. They are runtime
 diagnostics, not lifetime counters.
 
 While the filter is `ACTIVE` or `DEGRADED`, `2.4 GHz Found` and `5 GHz Found`
-count accepted Wi-Fi observations, not every raw radio hit. One AP observed
-`500` times inside the same active 60-minute window contributes `+1`; after its
-own timer expires and it is observed again, it may contribute another `+1`.
-When the filter is off or fail-open, all observations are accepted again.
+count accepted Wi-Fi observations, not every raw radio hit. Repeated sightings
+of the same AP are suppressed instead of inflating the main counters. When the
+filter is off or fail-open, all observations are accepted again.
 Changing filter state during the same wardriving session does not retroactively
 reset the main session counters, so a session that contains both filter-off and
 filter-on time may contain mixed counter semantics.
@@ -516,15 +501,12 @@ Duplicates blocked: 2973
 Overflow accepted: 0
 ```
 
-🧪 Piglet was also left running continuously for more than one hour with the
-filter active. During that soak test, the filter remained operational, 2.4 GHz
-and 5 GHz Wi-Fi scanning continued, and BLE continued independently interleaved
-with Wi-Fi. Repeated known Wi-Fi observations continued to be suppressed: raw
-radio scans still saw APs while accepted Wi-Fi rows often stayed at `0`, with
-occasional accepted Wi-Fi rows still appearing for eligible observations. There
-was no observed table-wide filter reset after the one-hour point, no observed
-overflow, no observed `DEGRADED` filter state, and the device remained
-operational under the normal WebUI/scanner workload.
+🧪 Piglet completed a continuous >1 hour hardware soak test with the Wi-Fi
+BSSID filter active. Dual-band scanning remained operational, BLE continued
+independently interleaved with Wi-Fi, repeated Wi-Fi observations continued to
+be suppressed, occasional accepted Wi-Fi rows continued normally, and no
+overflow or `DEGRADED` state was observed. The device remained operational under
+the normal WebUI/scanner workload.
 
 ### Passive BLE scanning and dynamic dedupe
 
