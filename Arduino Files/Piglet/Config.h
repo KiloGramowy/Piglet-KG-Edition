@@ -38,6 +38,7 @@ struct Config {
   uint8_t wifi5Channels[WIFI5_CHANNEL_MAX_COUNT] = {36, 40, 44, 48};
   uint16_t wifi24DwellMs = WIFI24_DWELL_KG_RECOMMENDED_MS; // 0 = use scanMode-derived dwell
   uint16_t wifi5DwellMs = WIFI5_DWELL_KG_RECOMMENDED_MS;  // 0 = use scanMode-derived dwell
+  bool wifiDedupeEnabled = true;
   bool bleEnabled = true;
   uint16_t bleScanDurationMs = BLE_SCAN_DURATION_DEFAULT_MS;
   uint16_t bleEveryNCycles = BLE_EVERY_N_CYCLES_DEFAULT;

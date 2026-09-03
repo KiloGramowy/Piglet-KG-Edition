@@ -331,6 +331,10 @@ void cfgAssignKV(const String& k, const String& v) {
       Serial.println("[CFG] Invalid wifi5DwellMs ignored");
     }
   }
+  else if (k == "wifiDedupeEnabled") {
+    String vv = v; vv.toLowerCase();
+    cfg.wifiDedupeEnabled = (vv == "true" || vv == "1" || vv == "enabled" || vv == "on");
+  }
   else if (k == "bleEnabled") {
     String vv = v; vv.toLowerCase();
     cfg.bleEnabled = (vv == "true" || vv == "1" || vv == "enabled" || vv == "on");
@@ -527,6 +531,7 @@ bool loadConfigFromSD() {
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
     cfg.scanProfile     = doc["scanProfile"]     | cfg.scanProfile;
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
+    cfg.wifiDedupeEnabled = doc["wifiDedupeEnabled"] | cfg.wifiDedupeEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
     cfg.autoDeleteUploadedLogs = doc["autoDeleteUploadedLogs"] | cfg.autoDeleteUploadedLogs;
@@ -621,6 +626,11 @@ bool saveConfigToSD() {
   f.print("wifi5DwellMs=");
   if (cfg.wifi5DwellMs > 0) f.println(cfg.wifi5DwellMs);
   else f.println();
+  f.println("");
+
+  f.println("# Wi-Fi BSSID dedupe filter: true or false.");
+  f.println("# Same BSSID is counted/logged at most once per 60 minutes; duplicates do not extend the timer.");
+  f.print("wifiDedupeEnabled="); f.println(cfg.wifiDedupeEnabled ? "true" : "false");
   f.println("");
 
   f.println("# BLE scanning is controlled by scanProfile and bleEnabled.");

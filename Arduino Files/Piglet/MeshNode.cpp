@@ -4,6 +4,7 @@
 #include "GPS.h"
 #include "SDUtils.h"
 #include "StartupGpsBackfill.h"
+#include "WifiDedupe.h"
 #include <esp_now.h>
 #include "esp_wifi.h"
 
@@ -549,11 +550,13 @@ static void nodeDoScanTick() {
   if (n == WIFI_SCAN_RUNNING) return;
 
   if (n > 0) {
-    jcmkNetworksFound += (uint32_t)n;
     // Return to ch 6 before any ESP-Now send (JCMK sendBroadcastStringPlain pattern).
     // The scan left the radio on the scan channel; Core listens only on ch 6.
     jcmkSetChannel(JCMK_ESPNOW_CH);
     for (int i = 0; i < n; i++) {
+      const uint8_t* rawBssid = WiFi.BSSID(i);
+      if (!wifiDedupeAccept(rawBssid)) continue;
+
       String bssid = WiFi.BSSIDstr(i);
       String ssid  = WiFi.SSID(i);
       String auth  = meshAuthModeToString(WiFi.encryptionType(i));
@@ -561,6 +564,7 @@ static void nodeDoScanTick() {
       int    rssi  = WiFi.RSSI(i);
       String line  = bssid + "," + ssid + "," + auth + ","
                    + String(ch) + "," + String(rssi) + ",W";
+      jcmkNetworksFound++;
       jcmkSendText(line);
       jcmkSentCount++;
     }

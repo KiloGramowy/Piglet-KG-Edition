@@ -6,6 +6,7 @@
 #include "WigleUpload.h"
 #include "BleScanner.h"
 #include "ResetHistory.h"
+#include "WifiDedupe.h"
 #include <ArduinoJson.h>
 
 // ---------------- Embedded HTML ----------------
@@ -466,6 +467,26 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
             <input id="bleEveryNCycles" type="number" min="1" max="100" step="1" placeholder="1-100">
             <div class="field-help">KG Recommended fixes this at every 5 Wi-Fi cycles. In Custom, lower runs BLE more often; higher leaves more Wi-Fi time. One cycle is one full configured channel sweep.</div>
           </div>
+        </div>
+      </div>
+      <div class="inner-card cfg-section">
+        <h4>Wi-Fi BSSID Filter</h4>
+        <div class="cfg-grid">
+          <div>
+            <label>Wi-Fi 60-Minute BSSID Filter</label>
+            <select id="wifiDedupeEnabled">
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+            <div class="field-help">Same Wi-Fi BSSID is counted/logged at most once per 60 minutes, based on the last accepted observation. Duplicates do not extend the timer. Wi-Fi only; if the filter cannot run, Wi-Fi logging fails open and continues.</div>
+          </div>
+          <div><label>Runtime</label><span class="v" id="wifiDedupeRuntime">—</span></div>
+          <div><label>Accepted</label><span class="v" id="wifiDedupeAccepted">—</span></div>
+          <div><label>Duplicates blocked</label><span class="v" id="wifiDedupeDropped">—</span></div>
+          <div><label>Overflow accepted</label><span class="v" id="wifiDedupeOverflowAccepted">—</span></div>
+        </div>
+        <div class="row mt-sm">
+          <a class="btn-sm" href="/wifi-dedupe/log" target="_blank" rel="noopener">View Filter Log</a>
         </div>
       </div>
       <div><label>Speed Units</label>
@@ -949,6 +970,13 @@ function updateBleStatusPill(j){
   }
 }
 
+function updateWifiDedupeStatus(j){
+  setText('wifiDedupeRuntime',j.wifiDedupeState||'\u2014');
+  setText('wifiDedupeAccepted',j.wifiDedupeAccepted);
+  setText('wifiDedupeDropped',j.wifiDedupeDropped);
+  setText('wifiDedupeOverflowAccepted',j.wifiDedupeOverflowAccepted);
+}
+
 async function loadStatus(){
   try{
     const r=await fetch('/status.json');
@@ -959,6 +987,7 @@ async function loadStatus(){
     setPill('pillGps','GPS: '+(j.gpsFix?'LOCK':'NO FIX'),j.gpsFix?'ok':'warn');
     setPill('pillSta','STA: '+(j.wifiConnected?'CONNECTED':'OFF'),j.wifiConnected?'ok':'warn');
     updateBleStatusPill(j);
+    updateWifiDedupeStatus(j);
 
     const wCls=(j.wigleTokenStatus===1)?'ok':(j.wigleTokenStatus===-1?'bad':'warn');
     setPill('pillWigle',wigleStatusText(j.wigleTokenStatus),wCls);
@@ -981,7 +1010,7 @@ async function loadStatus(){
     setText('vApSsid',j?.config?.wardriverSsid||'\u2014');
 
     // Fill config form — skip masked/secret values
-    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload','autoDeleteUploadedLogs','uploadedLogsToKeep']){
+    for(const k of ['wigleBasicToken','wdgwarsApiKey','deviceName','board','gpsBaud','gpsCacheMinutes','scanProfile','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','wifiDedupeEnabled','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload','autoDeleteUploadedLogs','uploadedLogsToKeep']){
       if(j.config&&(k in j.config)){
         const v=String(j.config[k]);
         if(maskedKeys.has(k)){
@@ -1099,7 +1128,7 @@ async function doSave(){
   if(!prepareChannelProfileSave())throw new Error('Choose at least one channel profile, or switch back to Original Piglet.');
   prepareDwellSave();
   validateBleTiming();
-  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','scanProfile','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload','autoDeleteUploadedLogs','uploadedLogsToKeep'];
+  const keys=['board','wigleBasicToken','wdgwarsApiKey','deviceName','gpsBaud','gpsCacheMinutes','scanProfile','wifi24Channels','wifi5Channels','wifi24DwellMs','wifi5DwellMs','homeSsid','homePsk','wardriverSsid','wardriverPsk','scanMode','wifiDedupeEnabled','bleEnabled','bleScanDurationMs','bleEveryNCycles','speedUnits','battPin','batteryTest','maxBootUploads','meshModeOnBoot','rotateScreen180','autoStartAfterUpload','autoDeleteUploadedLogs','uploadedLogsToKeep'];
   let body='# Saved from Web UI\n# key=value\n';
   for(const k of keys){
     const el=$(k);
@@ -1109,6 +1138,7 @@ async function doSave(){
   }
   const r=await fetch('/saveConfig',{method:'POST',headers:{'Content-Type':'text/plain'},body});
   await loadStatus();
+  if(!r.ok)throw new Error(await r.text()||('HTTP '+r.status));
   return r;
 }
 
@@ -1265,6 +1295,7 @@ async function pollUpload(){
     const r=await fetch('/status.json');const j=await r.json();
     updateBleStatusPill(j);
     setText('vFoundBle',j.bleUniqueCount);
+    updateWifiDedupeStatus(j);
     const up=!!j.uploading;
     const done=j.uploadDoneFiles||0;
     const total=j.uploadTotalFiles||0;
@@ -1350,10 +1381,11 @@ static void handleStatus() {
   // Heap allocation: StaticJsonDocument<N> puts N bytes on the Arduino loop
   // task stack (8192 bytes). Even 1024 bytes plus WebServer call chain overhead
   // risks a stack overflow.  DynamicJsonDocument allocates from the heap instead.
-  DynamicJsonDocument doc(2816);
+  DynamicJsonDocument doc(3584);
 
   bool allowScan = scanningEnabled && sdOk && (userScanOverride || !autoPaused);
   BleDiagSnapshot bleSnap = bleScannerDiagSnapshot();
+  WifiDedupeSnapshot wifiDedupeSnap = wifiDedupeGetSnapshot();
   doc["scanningEnabled"] = scanningEnabled;
   doc["allowScan"] = allowScan;
   doc["userScanOverride"] = userScanOverride;
@@ -1395,6 +1427,10 @@ static void handleStatus() {
   doc["bleActive"] = bleSnap.active;
   doc["bleUniqueCount"] = bleSnap.uniqueAccepted;
   doc["bleDedupeDegraded"] = bleSnap.dedupeDegraded;
+  doc["wifiDedupeState"] = wifiDedupeSnap.stateText;
+  doc["wifiDedupeAccepted"] = wifiDedupeSnap.accepted;
+  doc["wifiDedupeDropped"] = wifiDedupeSnap.dropped;
+  doc["wifiDedupeOverflowAccepted"] = wifiDedupeSnap.overflowAccepted;
 
   JsonObject c = doc.createNestedObject("config");
   c["wigleBasicToken"] = wigleConfigured() ? "(set)" : "";
@@ -1411,6 +1447,7 @@ static void handleStatus() {
   c["wifi5DwellMs"] = cfg.wifi5DwellMs > 0 ? String(cfg.wifi5DwellMs) : "";
   c["scanMode"] = cfg.scanMode;
   c["scanProfile"] = cfg.scanProfile;
+  c["wifiDedupeEnabled"] = cfg.wifiDedupeEnabled ? "true" : "false";
   c["bleEnabled"] = cfg.bleEnabled ? "true" : "false";
   c["bleScanDurationMs"] = cfg.bleScanDurationMs;
   c["bleEveryNCycles"] = cfg.bleEveryNCycles;
@@ -1530,6 +1567,19 @@ static void handleResetHistoryView() {
   file.close();
 }
 
+static void handleWifiDedupeLog() {
+  if (!sdOk) { server.send(500, "text/plain; charset=utf-8", "SD not available"); return; }
+
+  const char* path = wifiDedupeLogPath();
+  if (!SD.exists(path)) { server.send(404, "text/plain; charset=utf-8", "Not found"); return; }
+
+  File file = SD.open(path, FILE_READ);
+  if (!file) { server.send(500, "text/plain; charset=utf-8", "Open failed"); return; }
+
+  server.streamFile(file, "text/plain; charset=utf-8");
+  file.close();
+}
+
 static void handleDownload() {
   if (!sdOk) { server.send(500, "text/plain", "SD not available"); return; }
   if (!server.hasArg("name")) { server.send(400, "text/plain", "Missing name"); return; }
@@ -1618,6 +1668,7 @@ static void handleSaveConfig() {
   if (body.length() == 0) { server.send(400, "text/plain", "Empty body"); return; }
 
   bool any = false;
+  bool oldWifiDedupeEnabled = cfg.wifiDedupeEnabled;
 
   // If someone posts JSON manually, still accept it (nice fallback)
   if (body[0] == '{') {
@@ -1634,6 +1685,11 @@ static void handleSaveConfig() {
     cfg.gpsBaud         = doc["gpsBaud"]         | cfg.gpsBaud;
     cfg.scanMode        = doc["scanMode"]        | cfg.scanMode;
     cfg.scanProfile     = doc["scanProfile"]     | cfg.scanProfile;
+    if (doc.containsKey("wifiDedupeEnabled")) {
+      String vv = doc["wifiDedupeEnabled"].as<String>();
+      vv.toLowerCase();
+      cfg.wifiDedupeEnabled = (vv == "true" || vv == "1" || vv == "enabled" || vv == "on");
+    }
     cfg.bleEnabled      = doc["bleEnabled"]      | cfg.bleEnabled;
     cfg.bleScanDurationMs = doc["bleScanDurationMs"] | cfg.bleScanDurationMs;
     cfg.bleEveryNCycles = doc["bleEveryNCycles"] | cfg.bleEveryNCycles;
@@ -1687,6 +1743,13 @@ static void handleSaveConfig() {
   Serial.println("[CFG] Updated config from Web UI (in-RAM). Saving to SD...");
   if (!cfg.bleEnabled) bleScannerStop();
   bool ok = saveConfigToSD();
+  if (ok) {
+    if (oldWifiDedupeEnabled != cfg.wifiDedupeEnabled) {
+      wifiDedupeSetEnabled(cfg.wifiDedupeEnabled);
+    }
+  } else {
+    cfg.wifiDedupeEnabled = oldWifiDedupeEnabled;
+  }
   server.send(ok ? 200 : 500, "text/plain", ok ? "OK" : "FAIL");
 }
 
@@ -1972,6 +2035,7 @@ void startWebServer() {
   server.on("/files.json", handleFiles);
   server.on("/reset-history.json", handleResetHistoryJson);
   server.on("/reset-history/view", handleResetHistoryView);
+  server.on("/wifi-dedupe/log", handleWifiDedupeLog);
   server.on("/download",    handleDownload);
   server.on("/downloadAll", handleDownloadAll);
   server.on("/delete", HTTP_POST, handleDelete);
