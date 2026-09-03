@@ -1,7 +1,7 @@
 
 # Piglet KG Edition
 
-**Piglet KG Edition v1.0.0** — a field-tested ESP32-C5 wardriver based on
+**Piglet KG Edition v1.0.1** — a field-tested ESP32-C5 wardriver based on
 Piglet v2.58. 🐷📡
 
 <p align="center">
@@ -27,33 +27,35 @@ Original Piglet upstream: [Hamspiced/piglet](https://github.com/Hamspiced/piglet
 
 ## KG Edition Status
 
-✅ **v1.0.0 is the first stable KG Edition baseline.** It is centered on the
+✅ **v1.0.1 is the current stable KG Edition release.** It is centered on the
 Seeed Studio XIAO ESP32-C5 and reflects the current hardware-tested field build.
+Piglet KG Edition v1.0.0 remains the first stable KG Edition baseline.
 Validation is called out where it is specific to the real KG device; other
 implemented source features are labelled carefully.
 
 ## 📦 Precompiled Firmware
 
-A ready-to-flash **Piglet KG Edition v1.0.0** firmware image for the
+A ready-to-flash **Piglet KG Edition v1.0.1** firmware image for the
 **Seeed Studio XIAO ESP32-C5** is available in the GitHub Release.
 
 No Arduino IDE compilation is required if you use the precompiled image.
 
-➡️ **[Download Piglet KG Edition v1.0.0](https://github.com/KiloGramowy/Piglet-KG-Edition/releases/tag/v1.0.0)**
+➡️ **[Download Piglet KG Edition v1.0.1](https://github.com/KiloGramowy/Piglet-KG-Edition/releases/tag/v1.0.1)**
 
 Firmware:
 
-`Piglet-KG-Edition-v1.0.0-XIAO-ESP32C5-full.bin`
+`Piglet-KG-Edition-v1.0.1-XIAO-ESP32C5-full.bin`
 
-The release includes the matching `.sha256` checksum file together with the
-full flashing instructions and SHA-256 verification information.
+The release includes the matching
+`Piglet-KG-Edition-v1.0.1-XIAO-ESP32C5-full.bin.sha256` checksum file together
+with the full flashing instructions and SHA-256 verification information.
 
 > [!IMPORTANT]
 > ## 🐷 XIAO ESP32-C5 — Required Build Settings
 >
 > Do **not** use the Arduino IDE default board settings.
 >
-> Piglet KG Edition v1.0.0 was validated with:
+> Piglet KG Edition v1.0.1 was validated with:
 >
 > - 🧠 Board: `XIAO_ESP32C5`
 > - ⚙️ ESP32 Arduino Core: `3.3.11`
@@ -66,14 +68,15 @@ full flashing instructions and SHA-256 verification information.
 > - 📦 Partition Scheme: `8M with spiffs (3MB APP/1.5MB SPIFFS)`
 > - ⬆️ Upload Speed: `921600`
 >
-> **PSRAM is especially important for TLS/HTTPS uploads.**
+> **PSRAM is required for the exact Wi-Fi filter when it is enabled and is also
+> especially important for TLS/HTTPS uploads.**
 >
 > If PSRAM is left disabled, Wi-Fi and DNS may still work normally while
 > WiGLE and WDGoWars uploads can fail with:
 >
 > `TLS connect fail`
 
-## v1.0.0 Feature Overview
+## v1.0.1 Feature Overview
 
 - ✅ Seeed Studio XIAO ESP32-C5 primary KG target
 - ✅ Dual-band 2.4 GHz / 5 GHz Wi-Fi scanning on ESP32-C5
@@ -81,6 +84,7 @@ full flashing instructions and SHA-256 verification information.
 - ✅ Custom 2.4 GHz / 5 GHz channel and dwell control
 - ✅ Passive BLE scanning interleaved with Wi-Fi
 - ✅ Dynamic BLE dedupe with no fixed device-count limit
+- ✅ Exact Wi-Fi 60-minute BSSID filter with fail-open safety
 - ✅ Configurable GPS cache, including KG `720`-minute field configuration
 - ✅ Startup GPS Backfill for pre-first-fix Wi-Fi/BLE detections
 - ✅ WiGLE-compatible CSV output
@@ -124,6 +128,7 @@ Use the hardware-tested XIAO ESP32-C5 KG Recommended scan profile:
 
 ```ini
 scanProfile=kg
+wifiDedupeEnabled=true
 wifi24Channels=1,6,11
 wifi5Channels=36,40,44,48
 wifi24DwellMs=110
@@ -313,6 +318,7 @@ Configuration keys:
 
 ```ini
 scanProfile=kg
+wifiDedupeEnabled=true
 wifi24Channels=
 wifi5Channels=
 wifi24DwellMs=
@@ -345,6 +351,169 @@ values match or differ, and Original Piglet mode requires
   `110 ms` / `100 ms` dwell, plus BLE timing `1000 ms` / every `5` Wi-Fi
   cycles when BLE is enabled.
 - BLE can be disabled by the user while KG Recommended remains selected.
+
+### Wi-Fi 60-Minute BSSID Filter — Hardware Tested ✅
+
+Piglet KG Edition v1.0.1 adds an exact Wi-Fi-only BSSID filter for long
+wardriving sessions. The filter reduces repeated observations from the same
+access point while the radio continues scanning normally.
+
+Without filtering, a stationary or slow-moving Piglet may observe the same AP
+again and again, inflating Wi-Fi counters, CSV row count, and upload volume.
+With the filter enabled, the same BSSID contributes only one accepted Wi-Fi
+observation during its active 60-minute window.
+
+The key is the Wi-Fi **BSSID**, not SSID. Matching uses the complete exact
+48-bit BSSID. There is no Bloom filter, probabilistic matching, or SSID-based
+dedupe.
+
+Per-BSSID timing is exact:
+
+```text
+10:00:00  ACCEPT
+10:20:00  DROP
+10:59:59  DROP
+11:00:00  ACCEPT
+```
+
+- The first observation of a BSSID is accepted.
+- The same BSSID inside the next `3,600,000 ms` is dropped.
+- The timer is per BSSID and starts from the **last accepted** observation.
+- Dropped duplicate observations do **not** refresh or extend the timer.
+- After `3,600,000 ms` from the last accepted observation, the same BSSID may
+  be accepted again.
+- This is not lifetime-unique counting.
+
+The implemented table is built for predictable C5 runtime behavior:
+
+- Fixed exact set-associative hash table in PSRAM
+- `262144` total slots
+- `16384` buckets
+- `16` ways per bucket
+- Complete BSSID key plus accepted-at timestamp
+- Approximately `3 MiB` PSRAM allocation
+- Maximum `16` candidate checks per BSSID
+- No dynamically growing map
+- No per-BSSID String storage
+- No per-BSSID SD writes
+- No Bloom false positives
+
+Fail-open behavior is intentional. The filter must never become a reason to
+lose Wi-Fi observations. If a new BSSID cannot fit safely because its bucket is
+full, Piglet accepts that observation, increments **Overflow accepted**, enters
+`DEGRADED`, and continues deduping existing tracked BSSIDs. If PSRAM allocation
+or internal filter state fails, dedupe disables itself fail-open and Wi-Fi
+scanning/logging continues. The intended worst-case filter failure is extra
+duplicate records, not lost networks.
+
+Runtime states:
+
+| State | OLED | Meaning |
+|-------|------|---------|
+| `ACTIVE` | `Filter:OK` | Filter enabled and functioning normally |
+| `OFF_BY_USER` | `Filter:OFF` | Filter deliberately disabled in WebUI; all Wi-Fi observations are accepted |
+| `DEGRADED` | `Filter:DEG` | Filter still works for tracked entries, but at least one new BSSID was accepted fail-open because its bucket was full |
+| `DISABLED_FAIL_OPEN_PSRAM` | `F:PSRAM` | Filter was requested but PSRAM allocation failed/unavailable; Wi-Fi continues without dedupe |
+| `DISABLED_FAIL_OPEN_STATE` | `F:STATE` | Unsafe internal filter state was detected; filter disabled itself fail-open and Wi-Fi continues |
+
+SD status and Filter status are independent. For example:
+
+```text
+SD:FAIL Filter:OK
+```
+
+means the filter is healthy while SD has a separate problem.
+
+Configuration:
+
+```ini
+wifiDedupeEnabled=true
+```
+
+- Default: `true`
+- Existing old configurations with no `wifiDedupeEnabled` key default to
+  enabled.
+- Saving `Enabled -> Enabled` preserves the current 60-minute history.
+- Saving `Disabled -> Disabled` leaves the filter off.
+- Saving `Enabled -> Disabled` needs no reboot; PSRAM memory, history, and
+  filter stats are discarded, runtime becomes `OFF_BY_USER`, and Wi-Fi
+  continues unfiltered.
+- Saving `Disabled -> Enabled` needs no reboot; a fresh PSRAM table is
+  allocated, a fresh 60-minute history begins, and stats restart from zero.
+- If allocation fails, runtime reports PSRAM fail-open and Wi-Fi continues.
+- Saving an unrelated config option while the filter stays enabled does not
+  reset filter history.
+
+The WebUI **Wi-Fi BSSID Filter** card shows:
+
+- **Runtime** — current filter state
+- **Accepted** — Wi-Fi observations accepted by the current filter instance
+- **Duplicates blocked** — exact matching BSSID observations rejected inside
+  their active 60-minute window
+- **Overflow accepted** — new Wi-Fi observations accepted fail-open because
+  their target bucket could not safely store another live BSSID
+
+These statistics reset when a fresh filter instance begins. They are runtime
+diagnostics, not lifetime counters.
+
+While the filter is `ACTIVE` or `DEGRADED`, `2.4 GHz Found` and `5 GHz Found`
+count accepted Wi-Fi observations, not every raw radio hit. One AP observed
+`500` times inside the same active 60-minute window contributes `+1`; after its
+own timer expires and it is observed again, it may contribute another `+1`.
+When the filter is off or fail-open, all observations are accepted again.
+Changing filter state during the same wardriving session does not retroactively
+reset the main session counters, so a session that contains both filter-off and
+filter-on time may contain mixed counter semantics.
+
+Startup GPS Backfill runs after the filter in the solo scan path:
+
+```text
+Wi-Fi scan -> BSSID filter -> accepted Wi-Fi enters startup pending
+```
+
+Duplicates rejected by the filter do not inflate startup pending. When the
+first GPS fix arrives, Startup GPS Backfill replays the accepted pending records
+with the first-fix snapshot; replay is not passed through the filter a second
+time.
+
+Enabled filter history survives Stop Scan / Start Scan, normal page changes,
+WebUI access, GPS loss/recovery, Startup GPS closeout/replay, CSV rotation,
+Solo -> Node, and Node -> Solo. Filter history starts fresh after reboot,
+deep-sleep reboot, or an explicit WebUI `OFF -> ON` transition.
+
+Node/Core/BLE scope:
+
+- Piglet operating locally as a **Node** applies the same local Wi-Fi BSSID
+  filter before counting/sending its own Wi-Fi records.
+- **Core** receive/log behavior is not changed by this feature.
+- **BLE** behavior is separate. BLE dedupe, counters, logging, and scheduling
+  are unchanged.
+
+Filter health logging:
+
+```text
+/debug/wifi_dedupe.log
+```
+
+The WebUI **View Filter Log** link opens that exact log. It is a sparse
+health/lifecycle log, not continuous tracing. It does not log every accept,
+drop, or scan. The maximum size is `64 KiB`, and debug-log write failure does
+not stop wardriving. Typical events include `INIT ACTIVE`, PSRAM allocation
+details, `ENABLED_BY_USER`, `DISABLED_BY_USER`, `DEGRADED`, PSRAM failure,
+internal-state fail-open, and `MILLIS_WRAP_RESET`.
+
+Tested on real XIAO ESP32-C5 hardware. Continued field testing is ongoing.
+Observed hardware behavior included compile PASS, PSRAM allocation PASS,
+runtime `ACTIVE`, continuous scanning operational, Startup GPS integration
+working, WebUI Enabled/Disabled and `OFF -> ON` without reboot working, real
+duplicates blocked, new BSSIDs continuing to log, and `Overflow accepted`
+remaining `0` during observed testing. One stationary observation showed:
+
+```text
+Accepted: 57
+Duplicates blocked: 2973
+Overflow accepted: 0
+```
 
 ### Passive BLE scanning and dynamic dedupe
 
@@ -456,7 +625,7 @@ with a reboot or restart.
 
 ### Reset / Crash History
 
-KG Edition v1.0.0 includes a deliberately small Reset / Crash History feature.
+KG Edition includes a deliberately small Reset / Crash History feature.
 It is intentionally **not** a continuous Black Box and not runtime telemetry.
 Piglet records only the compact boot/reset facts needed to answer: "why did the
 device boot or reboot?"
@@ -510,7 +679,7 @@ runtime diagnostic subsystem.
 
 ### Uploaded Log Retention
 
-KG Edition v1.0.0 also adds simple automatic retention for CSV files already in:
+KG Edition also adds simple automatic retention for CSV files already in:
 
 ```text
 /uploaded/
@@ -597,10 +766,11 @@ Maximum is 327,680 bytes.
 
 <p align="center"><em>Looks innocent. Counts everything. 🐷📡</em></p>
 
-KG Edition development is not just bench testing. The v1.0.0 baseline was shaped
-through real XIAO ESP32-C5 mobile sessions, SD log inspection, upload tests,
-GPS-loss scenarios, BLE/Wi-Fi coexistence checks, OLED/WebUI behavior checks,
-and physical reset/deep-sleep validation.
+KG Edition development is not just bench testing. The v1.0.0 baseline was
+shaped through real XIAO ESP32-C5 mobile sessions, SD log inspection, upload
+tests, GPS-loss scenarios, BLE/Wi-Fi coexistence checks, OLED/WebUI behavior
+checks, and physical reset/deep-sleep validation. Piglet KG Edition v1.0.1 adds
+the hardware-tested exact Wi-Fi BSSID filter on top of that baseline.
 
 The repository is usable and shareable from `main`.
 
@@ -989,6 +1159,7 @@ scanMode=aggressive
 # GPS cache is separate; scanProfile=kg does not set gpsCacheMinutes.
 # KG tested XIAO ESP32-C5 profile:
 #   scanProfile=kg
+#   wifiDedupeEnabled=true
 #   wifi24Channels=1,6,11
 #   wifi5Channels=36,40,44,48
 #   wifi24DwellMs=110
@@ -1001,6 +1172,7 @@ scanMode=aggressive
 # Valid explicit dwell range: 20-1500 ms. 20 ms is experimental.
 
 scanProfile=kg
+wifiDedupeEnabled=true
 wifi24Channels=1,6,11
 wifi5Channels=36,40,44,48
 wifi24DwellMs=110
@@ -1143,7 +1315,7 @@ Entering **page 5** automatically starts ESP-Now node mode. Leaving it (single p
 
 - **Arduino IDE 2.x** or **PlatformIO**
 - **Arduino-ESP32 core** v3.0.0 or later
-- KG v1.0.0 XIAO ESP32-C5 validation used **Arduino IDE 2.3.10** with
+- KG v1.0.1 XIAO ESP32-C5 validation used **Arduino IDE 2.3.10** with
   **ESP32 Arduino core 3.3.11**
 
 ### Required Libraries — XIAO Variant (S3 / C5 / C6)
@@ -1176,9 +1348,9 @@ All networking, SPI, SD, ESP-Now, and ESP-IDF headers are built into the ESP32 c
 
 ### Flash Steps
 
-1. Select the correct **XIAO ESP32 board** variant (for KG v1.0.0 C5 validation:
+1. Select the correct **XIAO ESP32 board** variant (for KG v1.0.1 C5 validation:
    `XIAO_ESP32C5`)
-2. **CRITICAL:** Enable **PSRAM** (required for TLS/HTTPS uploads)
+2. **CRITICAL:** Enable **PSRAM** (required for the Wi-Fi filter and TLS/HTTPS uploads)
    - Tools → PSRAM → **OPI PSRAM** (C5/C6) or **QSPI PSRAM** (S3)
 3. For the verified XIAO ESP32-C5 build, use **USB CDC On Boot: Enabled**,
    **CPU: 240 MHz**, **Flash Frequency: 80 MHz**, **Flash Mode: QIO**,
