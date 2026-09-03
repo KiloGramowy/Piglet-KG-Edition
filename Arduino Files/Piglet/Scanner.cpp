@@ -4,6 +4,7 @@
 #include "GPS.h"
 #include "SDUtils.h"
 #include "StartupGpsBackfill.h"
+#include "WifiDedupe.h"
 
 static String authModeToString(wifi_auth_mode_t m) {
   switch (m) {
@@ -97,6 +98,9 @@ static void processScanResults(int n) {
     if (!is2g) {
       if (!(wardriverIsC5() && is5g)) continue;
     }
+
+    const uint8_t* rawBssid = WiFi.BSSID(i);
+    if (!wifiDedupeAccept(rawBssid)) continue;
 
     String ssid   = WiFi.SSID(i);
     String mac    = WiFi.BSSIDstr(i);

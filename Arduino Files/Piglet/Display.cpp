@@ -5,6 +5,7 @@
 #include "SDUtils.h"
 #include "MeshNode.h"
 #include "BleScanner.h"
+#include "WifiDedupe.h"
 #include <math.h>
 
 // ---- Splash slogans ----
@@ -613,8 +614,10 @@ static void drawPageStatus(float speedValue) {
 
   // SD (always at same place)
   display.setCursor(0, yLineSD);
-  display.print("SD: ");
+  display.print("SD:");
   display.print(sdOk ? "OK" : "FAIL");
+  display.print(" ");
+  display.print(wifiDedupeOledStatusText());
 
   // Bottom row: IP / AP countdown / Compass (ALWAYS SAME Y)
   display.setCursor(0, yBottom);

@@ -34,6 +34,7 @@
 #include "WiFiManager.h"
 #include "Scanner.h"
 #include "BleScanner.h"
+#include "WifiDedupe.h"
 #include "StartupGpsBackfill.h"
 #include "ResetHistory.h"
 #include "WigleUpload.h"
@@ -662,6 +663,10 @@ void setup() {
       scanningEnabled = true;
     }
   }
+
+  // Device-wide Wi-Fi BSSID filter starts after boot uploads/autostart decisions
+  // and before any WebUI, solo, or node scan path can query status or scan.
+  wifiDedupeBegin(cfg.wifiDedupeEnabled);
 
   // Now start web server after WiGLE operations are complete
   startWebServer();
