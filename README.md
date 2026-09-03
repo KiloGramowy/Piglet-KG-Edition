@@ -352,7 +352,7 @@ values match or differ, and Original Piglet mode requires
   cycles when BLE is enabled.
 - BLE can be disabled by the user while KG Recommended remains selected.
 
-### Wi-Fi 60-Minute BSSID Filter — Hardware Tested ✅
+### 🔥 Wi-Fi 60-Minute BSSID Filter — Hardware Tested ✅
 
 Piglet KG Edition v1.0.1 adds an exact Wi-Fi-only BSSID filter for long
 wardriving sessions. The filter reduces repeated observations from the same
@@ -398,13 +398,14 @@ The implemented table is built for predictable C5 runtime behavior:
 - No per-BSSID SD writes
 - No Bloom false positives
 
-Fail-open behavior is intentional. The filter must never become a reason to
-lose Wi-Fi observations. If a new BSSID cannot fit safely because its bucket is
-full, Piglet accepts that observation, increments **Overflow accepted**, enters
-`DEGRADED`, and continues deduping existing tracked BSSIDs. If PSRAM allocation
-or internal filter state fails, dedupe disables itself fail-open and Wi-Fi
-scanning/logging continues. The intended worst-case filter failure is extra
-duplicate records, not lost networks.
+> [!IMPORTANT]
+> 🛡️ Fail-open design: if the filter cannot safely track a BSSID, Piglet
+> accepts it and continues wardriving. If a new BSSID cannot fit safely because
+> its bucket is full, Piglet accepts that observation, increments **Overflow
+> accepted**, enters `DEGRADED`, and continues deduping existing tracked BSSIDs.
+> If PSRAM allocation or internal filter state fails, dedupe disables itself
+> fail-open and Wi-Fi scanning/logging continues. The intended worst-case filter
+> failure is extra duplicate records, not lost networks.
 
 Runtime states:
 
@@ -514,6 +515,16 @@ Accepted: 57
 Duplicates blocked: 2973
 Overflow accepted: 0
 ```
+
+🧪 Piglet was also left running continuously for more than one hour with the
+filter active. During that soak test, the filter remained operational, 2.4 GHz
+and 5 GHz Wi-Fi scanning continued, and BLE continued independently interleaved
+with Wi-Fi. Repeated known Wi-Fi observations continued to be suppressed: raw
+radio scans still saw APs while accepted Wi-Fi rows often stayed at `0`, with
+occasional accepted Wi-Fi rows still appearing for eligible observations. There
+was no observed table-wide filter reset after the one-hour point, no observed
+overflow, no observed `DEGRADED` filter state, and the device remained
+operational under the normal WebUI/scanner workload.
 
 ### Passive BLE scanning and dynamic dedupe
 
